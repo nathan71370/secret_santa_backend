@@ -2,6 +2,7 @@ pub mod admin;
 pub mod editions;
 pub mod extract;
 pub mod gifts;
+pub mod import;
 pub mod players;
 pub mod json;
 pub mod me;
@@ -25,6 +26,7 @@ pub fn router(state: AppState) -> Router {
         .route("/uploads/{file}", get(gifts::upload))
         .route("/editions/current", get(editions::get_current))
         .route("/editions/current/registration", put(editions::put_registration))
+        .route("/admin/import", post(import::import))
         .route("/admin/sso-users", get(admin::sso_users))
         .route("/admin/editions", post(admin::create_edition))
         .route("/admin/editions/current", patch(admin::patch_edition))
