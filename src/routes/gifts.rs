@@ -38,7 +38,7 @@ struct GiftForm {
 }
 
 async fn read_form(mut mp: Multipart) -> ApiResult<GiftForm> {
-    let bad = |e: axum::extract::multipart::MultipartError| ApiError::bad_request("INVALID_FORM", e.to_string());
+    let bad = |_: axum::extract::multipart::MultipartError| ApiError::bad_request("INVALID_FORM", "Formulaire invalide.");
     let mut form = GiftForm::default();
     while let Some(field) = mp.next_field().await.map_err(bad)? {
         match field.name().unwrap_or_default() {
@@ -87,7 +87,15 @@ pub async fn create(State(state): State<AppState>, user: CurrentUser, mp: Multip
         Some(bytes) => Some(save_photo(&state, bytes).await?),
         None => None,
     };
-    let gift = gifts::insert(&state.pool, user.player_id, year, &description, photo.as_deref(), state.now()).await?;
+    let gift = match gifts::insert(&state.pool, user.player_id, year, &description, photo.as_deref(), state.now()).await {
+        Ok(gift) => gift,
+        Err(e) => {
+            if let Some(name) = &photo {
+                photos::remove(&state.config.uploads_dir, name).await;
+            }
+            return Err(e.into());
+        }
+    };
     Ok((StatusCode::CREATED, Json(gift.into())))
 }
 
@@ -101,12 +109,21 @@ pub async fn update(State(state): State<AppState>, user: CurrentUser, Path(id): 
     } else if form.remove_photo {
         photo = None;
     }
-    if let Some(old) = &existing.photo_path {
-        if photo.as_deref() != Some(old) {
-            photos::remove(&state.config.uploads_dir, old).await;
+    let replaced = photo != existing.photo_path;
+    let gift = match gifts::update(&state.pool, id, year, &description, photo.as_deref()).await {
+        Ok(gift) => gift,
+        Err(e) => {
+            if let (true, Some(new)) = (replaced, &photo) {
+                if existing.photo_path.as_ref() != Some(new) {
+                    photos::remove(&state.config.uploads_dir, new).await;
+                }
+            }
+            return Err(e.into());
         }
+    };
+    if let (true, Some(old)) = (replaced, &existing.photo_path) {
+        photos::remove(&state.config.uploads_dir, old).await;
     }
-    let gift = gifts::update(&state.pool, id, year, &description, photo.as_deref()).await?;
     Ok(Json(gift.into()))
 }
 

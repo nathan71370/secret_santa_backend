@@ -2,11 +2,12 @@
 //! orientées, réduites, puis réencodées en JPEG — ce qui efface les
 //! métadonnées EXIF, géolocalisation comprise.
 
-use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader, codecs::jpeg::JpegEncoder, imageops::FilterType, metadata::Orientation};
+use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader, codecs::jpeg::JpegEncoder, imageops::FilterType, metadata::Orientation, Limits};
 use std::{io::Cursor, path::Path};
 
 pub const MAX_BYTES: usize = 5 * 1024 * 1024;
 pub const MAX_SIDE: u32 = 1600;
+const MAX_DECODE_SIDE: u32 = 10_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum PhotoError {
@@ -29,6 +30,12 @@ pub fn normalize(bytes: &[u8]) -> Result<Vec<u8>, PhotoError> {
     let mut decoder = ImageReader::with_format(Cursor::new(bytes), format)
         .into_decoder()
         .map_err(|_| PhotoError::Unreadable)?;
+    // Garde-fou contre les images « bombes » : petites en octets, énormes une fois décodées.
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(MAX_DECODE_SIDE);
+    limits.max_image_height = Some(MAX_DECODE_SIDE);
+    limits.max_alloc = Some(256 * 1024 * 1024);
+    decoder.set_limits(limits).map_err(|_| PhotoError::Unreadable)?;
     let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
     let mut img = DynamicImage::from_decoder(decoder).map_err(|_| PhotoError::Unreadable)?;
     img.apply_orientation(orientation);
@@ -44,9 +51,7 @@ pub fn normalize(bytes: &[u8]) -> Result<Vec<u8>, PhotoError> {
 
 /// `<uuid v4>.jpg` uniquement : ferme la porte aux `../` sur la route de lecture.
 pub fn is_valid_name(name: &str) -> bool {
-    name.len() == 40
-        && name.ends_with(".jpg")
-        && name[..36].chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+    name.strip_suffix(".jpg").is_some_and(|stem| stem.len() == 36 && uuid::Uuid::parse_str(stem).is_ok())
 }
 
 pub async fn store(dir: &Path, jpeg: &[u8]) -> std::io::Result<String> {
@@ -101,6 +106,23 @@ mod tests {
     #[test]
     fn refuse_plus_de_5_mo() {
         assert_eq!(normalize(&vec![0u8; MAX_BYTES + 1]), Err(PhotoError::TooLarge));
+    }
+
+    #[test]
+    fn nom_multi_octets_sans_panique() {
+        let nom = format!("é{}.jpg", "a".repeat(34));
+        assert_eq!(nom.len(), 40);
+        assert!(!is_valid_name(&nom));
+        let nom = format!("{}é{}.jpg", "a".repeat(35), "a");
+        assert!(!is_valid_name(&nom));
+    }
+
+    #[test]
+    fn refuse_les_dimensions_declarees_demesurees() {
+        let mut bytes = png(8, 8);
+        bytes[16..20].copy_from_slice(&20_000u32.to_be_bytes());
+        bytes[20..24].copy_from_slice(&20_000u32.to_be_bytes());
+        assert!(normalize(&bytes).is_err());
     }
 
     #[test]
