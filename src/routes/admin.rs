@@ -8,10 +8,14 @@ use crate::{
     auth::AuthError,
     error::{ApiError, ApiResult},
     repo::{
+        assignments::{self, MailRow, MailStatus},
         editions::{self, EditionStatus},
         players,
     },
-    services::mailing,
+    services::{
+        draw_service::{self, DrawOutcome},
+        mailing,
+    },
     state::AppState,
 };
 use axum::{
@@ -165,4 +169,61 @@ pub async fn put_registration_for(
     }
     editions::set_registration(&state.pool, e.id, player_id, body.participating, true, state.now()).await?;
     Ok(StatusCode::OK)
+}
+
+pub async fn draw_now(State(state): State<AppState>, admin: AdminUser) -> ApiResult<Json<EditionView>> {
+    let e = require_current(&state).await?;
+    if e.status == EditionStatus::Drawn {
+        return Err(ApiError::conflict("ALREADY_DRAWN", "Le tirage a déjà eu lieu."));
+    }
+    match draw_service::run_draw(&state, e.id).await? {
+        DrawOutcome::Drawn => {
+            let e = require_current(&state).await?;
+            Ok(Json(edition_view(&state, &e, &admin.0).await?))
+        }
+        DrawOutcome::AlreadyDone => Err(ApiError::conflict("ALREADY_DRAWN", "Le tirage a déjà eu lieu.")),
+        DrawOutcome::Failed(reason) => Err(ApiError::unprocessable("DRAW_FAILED", reason)),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct CancelDraw {
+    pub deadline: DateTime<Utc>,
+}
+
+pub async fn cancel_draw(
+    State(state): State<AppState>,
+    admin: AdminUser,
+    ApiJson(body): ApiJson<CancelDraw>,
+) -> ApiResult<Json<EditionView>> {
+    validate_deadline(&state, body.deadline)?;
+    let e = require_current(&state).await?;
+    if !draw_service::cancel_draw(&state, e.id, body.deadline).await? {
+        return Err(ApiError::conflict("NOT_DRAWN", "Il n'y a pas de tirage à annuler."));
+    }
+    let e = require_current(&state).await?;
+    Ok(Json(edition_view(&state, &e, &admin.0).await?))
+}
+
+pub async fn mails(State(state): State<AppState>, _admin: AdminUser) -> ApiResult<Json<Vec<MailRow>>> {
+    let e = require_current(&state).await?;
+    Ok(Json(assignments::mail_statuses(&state.pool, e.id).await?))
+}
+
+pub async fn resend(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+    Path(player_id): Path<i64>,
+) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
+    let e = require_current(&state).await?;
+    if !assignments::set_mail_status(&state.pool, e.id, player_id, MailStatus::Pending, None).await? {
+        return Err(ApiError::not_found("Ce joueur ne fait pas partie du tirage."));
+    }
+    let task_state = state.clone();
+    state.spawn(async move {
+        if let Err(err) = mailing::send_result(&task_state, &e, player_id).await {
+            tracing::error!(error = %err, "renvoi impossible");
+        }
+    });
+    Ok((StatusCode::ACCEPTED, Json(serde_json::json!({ "mailStatus": "pending" }))))
 }

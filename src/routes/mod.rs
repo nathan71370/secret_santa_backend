@@ -21,7 +21,11 @@ pub fn router(state: AppState) -> Router {
         .route("/admin/sso-users", get(admin::sso_users))
         .route("/admin/editions", post(admin::create_edition))
         .route("/admin/editions/current", patch(admin::patch_edition))
-        .route("/admin/editions/current/registrations/{player_id}", put(admin::put_registration_for));
+        .route("/admin/editions/current/registrations/{player_id}", put(admin::put_registration_for))
+        .route("/editions/current/my-target", get(editions::my_target))
+        .route("/admin/editions/current/draw", post(admin::draw_now).delete(admin::cancel_draw))
+        .route("/admin/editions/current/mails", get(admin::mails))
+        .route("/admin/editions/current/mails/{player_id}/resend", post(admin::resend));
 
     Router::new()
         .nest("/api", api)

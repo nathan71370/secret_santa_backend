@@ -72,3 +72,13 @@ pub async fn put_registration(
     editions::set_registration(&state.pool, e.id, user.player_id, Some(body.participating), false, state.now()).await?;
     Ok(Json(edition_view(&state, &e, &user).await?))
 }
+
+pub async fn my_target(State(state): State<AppState>, user: CurrentUser) -> ApiResult<Json<PlayerRef>> {
+    let not_found = || ApiError::not_found("Pas de cible pour toi cette année.");
+    let e = current_edition(&state).await?.ok_or_else(not_found)?;
+    if e.status != EditionStatus::Drawn {
+        return Err(not_found());
+    }
+    let target = crate::repo::assignments::target_of(&state.pool, e.id, user.player_id).await?;
+    target.map(Json).ok_or_else(not_found)
+}
