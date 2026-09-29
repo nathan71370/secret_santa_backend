@@ -66,7 +66,12 @@ impl FromRequestParts<AppState> for CurrentUser {
         }
 
         let mut conn = state.pool.acquire().await?;
-        let player_id = players::upsert_sso(&mut conn, session.user_id, &session.email, &session.pseudo, state.now()).await?;
+        let Some(player_id) =
+            players::upsert_sso(&mut conn, session.user_id, &session.email, &session.pseudo, state.now()).await?
+        else {
+            tracing::warn!(sso_user_id = session.user_id, "adresse déjà liée à un autre compte SSO : accès refusé");
+            return Err(ApiError::Forbidden);
+        };
 
         Ok(CurrentUser {
             player_id,

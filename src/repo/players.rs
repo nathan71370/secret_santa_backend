@@ -23,13 +23,17 @@ const COLS: &str = "id, email, sso_user_id, pseudo, has_access";
 
 /// Relie un compte SSO à son joueur : par `sso_user_id` s'il est déjà connu,
 /// sinon par l'adresse (joueur importé de `players.txt`), sinon création.
+///
+/// Renvoie `None` si l'adresse appartient déjà à un joueur relié à un AUTRE
+/// compte SSO (adresse recyclée) : on ne réattribue jamais les inscriptions,
+/// cadeaux et tirages d'un joueur à un nouveau compte.
 pub async fn upsert_sso(
     conn: &mut SqliteConnection,
     sso_user_id: i64,
     email: &str,
     pseudo: &str,
     now: DateTime<Utc>,
-) -> Result<i64, sqlx::Error> {
+) -> Result<Option<i64>, sqlx::Error> {
     let email = email.trim().to_lowercase();
     let known: Option<i64> = sqlx::query_scalar("SELECT id FROM players WHERE sso_user_id = ?")
         .bind(sso_user_id)
@@ -50,19 +54,20 @@ pub async fn upsert_sso(
             .bind(id)
             .execute(&mut *conn)
             .await?;
-        return Ok(id);
+        return Ok(Some(id));
     }
     sqlx::query_scalar(
         "INSERT INTO players (email, sso_user_id, pseudo, has_access, updated_at) VALUES (?, ?, ?, 1, ?)
          ON CONFLICT (email) DO UPDATE SET sso_user_id = excluded.sso_user_id, pseudo = excluded.pseudo,
              has_access = 1, updated_at = excluded.updated_at
+         WHERE players.sso_user_id IS NULL OR players.sso_user_id = excluded.sso_user_id
          RETURNING id",
     )
     .bind(&email)
     .bind(sso_user_id)
     .bind(pseudo)
     .bind(now)
-    .fetch_one(&mut *conn)
+    .fetch_optional(&mut *conn)
     .await
 }
 
@@ -71,7 +76,9 @@ pub async fn sync_access(pool: &SqlitePool, users: &[SsoUser], now: DateTime<Utc
     let mut tx = pool.begin().await?;
     sqlx::query("UPDATE players SET has_access = 0").execute(&mut *tx).await?;
     for u in users {
-        upsert_sso(&mut tx, u.user_id, &u.email, &u.pseudo, now).await?;
+        if upsert_sso(&mut tx, u.user_id, &u.email, &u.pseudo, now).await?.is_none() {
+            tracing::warn!(sso_user_id = u.user_id, "adresse déjà liée à un autre compte SSO : compte ignoré");
+        }
     }
     tx.commit().await
 }
