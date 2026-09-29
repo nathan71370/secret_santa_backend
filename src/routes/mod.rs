@@ -1,8 +1,10 @@
+pub mod admin;
+pub mod editions;
 pub mod extract;
 pub mod me;
 
 use crate::state::AppState;
-use axum::{Router, extract::DefaultBodyLimit, routing::get};
+use axum::{Router, extract::DefaultBodyLimit, routing::{get, patch, post, put}};
 use tower_http::trace::TraceLayer;
 
 pub async fn health() -> &'static str {
@@ -12,7 +14,13 @@ pub async fn health() -> &'static str {
 pub fn router(state: AppState) -> Router {
     let api: Router<AppState> = Router::new()
         .route("/health", get(health))
-        .route("/me", get(me::me));
+        .route("/me", get(me::me))
+        .route("/editions/current", get(editions::get_current))
+        .route("/editions/current/registration", put(editions::put_registration))
+        .route("/admin/sso-users", get(admin::sso_users))
+        .route("/admin/editions", post(admin::create_edition))
+        .route("/admin/editions/current", patch(admin::patch_edition))
+        .route("/admin/editions/current/registrations/{player_id}", put(admin::put_registration_for));
 
     Router::new()
         .nest("/api", api)

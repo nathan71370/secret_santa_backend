@@ -8,6 +8,7 @@ pub mod legacy_import;
 pub mod mail;
 pub mod repo;
 pub mod routes;
+pub mod services;
 pub mod state;
 
 /// Slug de l'application dans le catalogue de limperiam-auth.

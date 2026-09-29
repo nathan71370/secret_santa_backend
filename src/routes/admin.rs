@@ -1,0 +1,163 @@
+use super::{
+    editions::{EditionView, edition_view, require_current},
+    extract::AdminUser,
+};
+use crate::{
+    APP_SLUG,
+    auth::AuthError,
+    error::{ApiError, ApiResult},
+    repo::{
+        editions::{self, EditionStatus},
+        players,
+    },
+    services::mailing,
+    state::AppState,
+};
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::StatusCode,
+};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+fn auth_error(e: AuthError) -> ApiError {
+    match e {
+        AuthError::Forbidden => ApiError::Forbidden,
+        AuthError::Unavailable(detail) => {
+            tracing::warn!(%detail, "annuaire SSO indisponible");
+            ApiError::Upstream
+        }
+    }
+}
+
+fn validate_budget(budget: i64) -> ApiResult<()> {
+    if (1..=1000).contains(&budget) {
+        Ok(())
+    } else {
+        Err(ApiError::bad_request("INVALID_BUDGET", "Le budget doit être compris entre 1 et 1000 €."))
+    }
+}
+
+fn validate_deadline(state: &AppState, deadline: DateTime<Utc>) -> ApiResult<()> {
+    if deadline > state.now() {
+        Ok(())
+    } else {
+        Err(ApiError::bad_request("INVALID_DEADLINE", "La deadline doit être dans le futur."))
+    }
+}
+
+/// Rafraîchit l'instantané des comptes ayant accès à l'app, au nom de l'admin.
+async fn refresh_directory(state: &AppState, admin: &AdminUser) -> ApiResult<()> {
+    let users = state.auth.list_users(&admin.0.token, APP_SLUG).await.map_err(auth_error)?;
+    players::sync_access(&state.pool, &users, state.now()).await?;
+    Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryEntry {
+    pub player_id: i64,
+    pub pseudo: String,
+    pub email: String,
+    pub registration: Option<bool>,
+    pub answered_by_admin: bool,
+}
+
+pub async fn sso_users(State(state): State<AppState>, admin: AdminUser) -> ApiResult<Json<Vec<DirectoryEntry>>> {
+    refresh_directory(&state, &admin).await?;
+    let regs = match super::editions::current_edition(&state).await? {
+        Some(e) => editions::registrations(&state.pool, e.id).await?,
+        None => Default::default(),
+    };
+    let entries = players::with_access(&state.pool)
+        .await?
+        .into_iter()
+        .map(|p| {
+            let reg = regs.get(&p.id).copied();
+            DirectoryEntry {
+                player_id: p.id,
+                pseudo: p.pseudo,
+                email: p.email,
+                registration: reg.map(|(participating, _)| participating),
+                answered_by_admin: reg.is_some_and(|(_, by_admin)| by_admin),
+            }
+        })
+        .collect();
+    Ok(Json(entries))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateEdition {
+    pub budget_eur: i64,
+    pub deadline: DateTime<Utc>,
+}
+
+pub async fn create_edition(
+    State(state): State<AppState>,
+    admin: AdminUser,
+    Json(body): Json<CreateEdition>,
+) -> ApiResult<(StatusCode, Json<EditionView>)> {
+    validate_budget(body.budget_eur)?;
+    validate_deadline(&state, body.deadline)?;
+    let year = state.current_year();
+    if editions::by_year(&state.pool, year).await?.is_some() {
+        return Err(ApiError::conflict("EDITION_EXISTS", format!("L'édition {year} existe déjà.")));
+    }
+    refresh_directory(&state, &admin).await?;
+    let edition = editions::create_open(&state.pool, year, body.budget_eur, body.deadline, state.now()).await?;
+    state.spawn(mailing::announce(state.clone(), edition.id));
+    Ok((StatusCode::CREATED, Json(edition_view(&state, &edition, &admin.0).await?)))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PatchEdition {
+    pub budget_eur: Option<i64>,
+    pub deadline: Option<DateTime<Utc>>,
+}
+
+pub async fn patch_edition(
+    State(state): State<AppState>,
+    admin: AdminUser,
+    Json(body): Json<PatchEdition>,
+) -> ApiResult<Json<EditionView>> {
+    let e = require_current(&state).await?;
+    if e.status == EditionStatus::Drawn {
+        return Err(ApiError::conflict("EDITION_DRAWN", "Le tirage a déjà eu lieu."));
+    }
+    if let Some(budget) = body.budget_eur {
+        validate_budget(budget)?;
+        editions::update_budget(&state.pool, e.id, budget).await?;
+    }
+    if let Some(deadline) = body.deadline {
+        validate_deadline(&state, deadline)?;
+        editions::update_deadline(&state.pool, e.id, deadline).await?;
+    }
+    let e = require_current(&state).await?;
+    Ok(Json(edition_view(&state, &e, &admin.0).await?))
+}
+
+#[derive(Deserialize)]
+pub struct AdminRegistration {
+    #[serde(default)]
+    pub participating: Option<bool>,
+}
+
+pub async fn put_registration_for(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+    Path(player_id): Path<i64>,
+    Json(body): Json<AdminRegistration>,
+) -> ApiResult<StatusCode> {
+    let e = require_current(&state).await?;
+    if e.status != EditionStatus::Open {
+        return Err(ApiError::conflict("REGISTRATION_CLOSED", "Les inscriptions sont closes."));
+    }
+    if players::find(&state.pool, player_id).await?.is_none() {
+        return Err(ApiError::not_found("Joueur inconnu."));
+    }
+    editions::set_registration(&state.pool, e.id, player_id, body.participating, true, state.now()).await?;
+    Ok(StatusCode::OK)
+}

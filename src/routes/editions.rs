@@ -1,0 +1,74 @@
+use super::extract::CurrentUser;
+use crate::{
+    error::{ApiError, ApiResult},
+    repo::{
+        editions::{self, Edition, EditionStatus},
+        players::PlayerRef,
+    },
+    state::AppState,
+};
+use axum::{Json, extract::State};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditionView {
+    pub year: i64,
+    pub budget_eur: i64,
+    pub deadline: DateTime<Utc>,
+    pub status: EditionStatus,
+    /// Réservé à l'admin.
+    pub failure_reason: Option<String>,
+    pub drawn_at: Option<DateTime<Utc>>,
+    pub participants: Vec<PlayerRef>,
+    pub my_registration: Option<bool>,
+    pub imported: bool,
+}
+
+pub async fn edition_view(state: &AppState, e: &Edition, viewer: &CurrentUser) -> ApiResult<EditionView> {
+    Ok(EditionView {
+        year: e.year,
+        budget_eur: e.budget_eur,
+        deadline: e.deadline,
+        status: e.status,
+        failure_reason: if viewer.is_admin { e.failure_reason.clone() } else { None },
+        drawn_at: e.drawn_at,
+        participants: editions::participants(&state.pool, e.id).await?,
+        my_registration: editions::registration_of(&state.pool, e.id, viewer.player_id).await?,
+        imported: e.imported,
+    })
+}
+
+pub async fn current_edition(state: &AppState) -> ApiResult<Option<Edition>> {
+    Ok(editions::by_year(&state.pool, state.current_year()).await?)
+}
+
+pub async fn require_current(state: &AppState) -> ApiResult<Edition> {
+    current_edition(state).await?.ok_or_else(|| ApiError::not_found("Aucune édition cette année."))
+}
+
+pub async fn get_current(State(state): State<AppState>, user: CurrentUser) -> ApiResult<Json<Option<EditionView>>> {
+    match current_edition(&state).await? {
+        None => Ok(Json(None)),
+        Some(e) => Ok(Json(Some(edition_view(&state, &e, &user).await?))),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct RegistrationBody {
+    pub participating: bool,
+}
+
+pub async fn put_registration(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Json(body): Json<RegistrationBody>,
+) -> ApiResult<Json<EditionView>> {
+    let e = require_current(&state).await?;
+    if e.status != EditionStatus::Open || state.now() >= e.deadline {
+        return Err(ApiError::conflict("REGISTRATION_CLOSED", "Les inscriptions sont closes."));
+    }
+    editions::set_registration(&state.pool, e.id, user.player_id, Some(body.participating), false, state.now()).await?;
+    Ok(Json(edition_view(&state, &e, &user).await?))
+}
