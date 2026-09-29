@@ -1,6 +1,7 @@
 pub mod clock;
 pub mod config;
 pub mod db;
+pub mod draw;
 pub mod error;
 pub mod routes;
 
