@@ -86,3 +86,19 @@ pub async fn notify_failure(state: AppState, edition_id: i64) {
     let mail = templates::draw_failed(&state.config.admin_email, edition.year, &reason, &state.config.public_origin);
     send_logged(&state, &mail, "échec du tirage").await;
 }
+
+pub async fn remind(state: AppState, edition_id: i64) {
+    let result: Result<(), ApiError> = async {
+        let Some(edition) = editions::by_id(&state.pool, edition_id).await? else { return Ok(()) };
+        for p in editions::non_respondents_with_access(&state.pool, edition_id).await? {
+            let mail = templates::reminder(&p.email, &p.pseudo, edition.year, edition.deadline, &state.config.public_origin);
+            send_logged(&state, &mail, "relance").await;
+            tokio::time::sleep(state.config.mail_delay).await;
+        }
+        Ok(())
+    }
+    .await;
+    if let Err(e) = result {
+        tracing::error!(error = %e, "relance interrompue");
+    }
+}
