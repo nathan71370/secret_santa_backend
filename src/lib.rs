@@ -13,3 +13,4 @@ pub mod state;
 
 /// Slug de l'application dans le catalogue de limperiam-auth.
 pub const APP_SLUG: &str = "santa";
+pub mod photos;

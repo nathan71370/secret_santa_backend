@@ -1,6 +1,8 @@
 pub mod admin;
 pub mod editions;
 pub mod extract;
+pub mod gifts;
+pub mod players;
 pub mod json;
 pub mod me;
 
@@ -16,6 +18,11 @@ pub fn router(state: AppState) -> Router {
     let api: Router<AppState> = Router::new()
         .route("/health", get(health))
         .route("/me", get(me::me))
+        .route("/players", get(players::list))
+        .route("/players/{id}", get(players::profile))
+        .route("/me/gifts", post(gifts::create))
+        .route("/me/gifts/{id}", put(gifts::update).delete(gifts::delete))
+        .route("/uploads/{file}", get(gifts::upload))
         .route("/editions/current", get(editions::get_current))
         .route("/editions/current/registration", put(editions::put_registration))
         .route("/admin/sso-users", get(admin::sso_users))
