@@ -1,11 +1,10 @@
-use axum::{body::Body, http::Request};
-use tower::ServiceExt;
+mod common;
+
+use axum::{body::Body, http::{Request, StatusCode}};
 
 #[tokio::test]
-async fn health_repond_ok_sans_authentification() {
-    let res = secret_santa::routes::router()
-        .oneshot(Request::get("/api/health").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
-    assert_eq!(res.status(), 200);
+async fn health_repond_ok() {
+    let app = common::TestApp::new().await;
+    let res = app.response(Request::get("/api/health").body(Body::empty()).unwrap()).await;
+    assert_eq!(res.status(), StatusCode::OK);
 }
