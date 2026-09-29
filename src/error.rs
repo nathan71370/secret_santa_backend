@@ -48,6 +48,12 @@ impl From<sqlx::Error> for ApiError {
     }
 }
 
+impl From<axum::extract::rejection::JsonRejection> for ApiError {
+    fn from(_: axum::extract::rejection::JsonRejection) -> Self {
+        ApiError::bad_request("INVALID_BODY", "Requête invalide : corps JSON attendu.")
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, code) = match &self {

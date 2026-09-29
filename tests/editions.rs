@@ -187,3 +187,25 @@ async fn l_admin_modifie_budget_et_deadline() {
         chrono::DateTime::parse_from_rfc3339(&new_deadline).unwrap()
     );
 }
+
+#[tokio::test]
+async fn patch_invalide_ne_modifie_rien() {
+    let app = TestApp::new().await;
+    let admin = app.login(1, "Nathan", true);
+    open_edition(&app, &admin).await;
+    let (status, body) = app.patch("/api/admin/editions/current", &admin, json!({ "budgetEur": 50, "deadline": in_days(&app, -1) })).await;
+    assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("INVALID_DEADLINE")));
+    let (_, body) = app.get("/api/editions/current", &admin).await;
+    assert_eq!(body["budgetEur"], 30);
+}
+
+#[tokio::test]
+async fn corps_json_invalide_renvoie_une_erreur_json() {
+    let app = TestApp::new().await;
+    let admin = app.login(1, "Nathan", true);
+    open_edition(&app, &admin).await;
+    let (status, body) = app.put("/api/editions/current/registration", &admin, json!({ "participating": "oui" })).await;
+    assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("INVALID_BODY")));
+    let (status, body) = app.post("/api/admin/editions", &admin, json!({ "budgetEur": 30 })).await;
+    assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("INVALID_BODY")));
+}

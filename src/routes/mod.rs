@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod editions;
 pub mod extract;
+pub mod json;
 pub mod me;
 
 use crate::state::AppState;

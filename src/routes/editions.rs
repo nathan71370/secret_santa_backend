@@ -1,4 +1,4 @@
-use super::extract::CurrentUser;
+use super::{extract::CurrentUser, json::ApiJson};
 use crate::{
     error::{ApiError, ApiResult},
     repo::{
@@ -63,7 +63,7 @@ pub struct RegistrationBody {
 pub async fn put_registration(
     State(state): State<AppState>,
     user: CurrentUser,
-    Json(body): Json<RegistrationBody>,
+    ApiJson(body): ApiJson<RegistrationBody>,
 ) -> ApiResult<Json<EditionView>> {
     let e = require_current(&state).await?;
     if e.status != EditionStatus::Open || state.now() >= e.deadline {

@@ -8,12 +8,12 @@ use crate::{
     state::AppState,
 };
 
-/// Journalise l'échec sans l'adresse du destinataire.
+/// Journalise l'échec sans le texte de l'erreur : celui-ci peut reprendre l'adresse du destinataire.
 pub async fn send_logged(state: &AppState, mail: &Mail, kind: &str) -> bool {
     match state.mailer.send(mail).await {
         Ok(()) => true,
-        Err(e) => {
-            tracing::warn!(kind, error = %e, "échec d'envoi d'un mail");
+        Err(_) => {
+            tracing::warn!(kind, "échec d'envoi d'un mail");
             false
         }
     }

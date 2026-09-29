@@ -1,6 +1,7 @@
 use super::{
     editions::{EditionView, edition_view, require_current},
     extract::AdminUser,
+    json::ApiJson,
 };
 use crate::{
     APP_SLUG,
@@ -97,7 +98,7 @@ pub struct CreateEdition {
 pub async fn create_edition(
     State(state): State<AppState>,
     admin: AdminUser,
-    Json(body): Json<CreateEdition>,
+    ApiJson(body): ApiJson<CreateEdition>,
 ) -> ApiResult<(StatusCode, Json<EditionView>)> {
     validate_budget(body.budget_eur)?;
     validate_deadline(&state, body.deadline)?;
@@ -121,7 +122,7 @@ pub struct PatchEdition {
 pub async fn patch_edition(
     State(state): State<AppState>,
     admin: AdminUser,
-    Json(body): Json<PatchEdition>,
+    ApiJson(body): ApiJson<PatchEdition>,
 ) -> ApiResult<Json<EditionView>> {
     let e = require_current(&state).await?;
     if e.status == EditionStatus::Drawn {
@@ -129,10 +130,14 @@ pub async fn patch_edition(
     }
     if let Some(budget) = body.budget_eur {
         validate_budget(budget)?;
-        editions::update_budget(&state.pool, e.id, budget).await?;
     }
     if let Some(deadline) = body.deadline {
         validate_deadline(&state, deadline)?;
+    }
+    if let Some(budget) = body.budget_eur {
+        editions::update_budget(&state.pool, e.id, budget).await?;
+    }
+    if let Some(deadline) = body.deadline {
         editions::update_deadline(&state.pool, e.id, deadline).await?;
     }
     let e = require_current(&state).await?;
@@ -149,7 +154,7 @@ pub async fn put_registration_for(
     State(state): State<AppState>,
     _admin: AdminUser,
     Path(player_id): Path<i64>,
-    Json(body): Json<AdminRegistration>,
+    ApiJson(body): ApiJson<AdminRegistration>,
 ) -> ApiResult<StatusCode> {
     let e = require_current(&state).await?;
     if e.status != EditionStatus::Open {
