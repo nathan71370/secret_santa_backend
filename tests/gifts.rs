@@ -122,3 +122,14 @@ async fn profil_inconnu_404() {
     let (status, _) = app.get("/api/players/9999", &t).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn photo_de_7_mo_413() {
+    let app = TestApp::new().await;
+    let t = app.login(1, "Alice", false);
+    let (status, body) = app
+        .multipart(Method::POST, "/api/me/gifts", &t, vec![("year", text("2025")), ("description", text("x")), ("photo", photo(vec![0u8; 7 * 1024 * 1024]))])
+        .await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(body, serde_json::json!({ "error": "PAYLOAD_TOO_LARGE", "message": "Photo trop lourde (5 Mo maximum)." }));
+}

@@ -19,6 +19,10 @@ pub enum ApiError {
     Conflict { code: &'static str, message: String },
     #[error("{message}")]
     Unprocessable { code: &'static str, message: String },
+    #[error("Méthode non autorisée.")]
+    MethodNotAllowed,
+    #[error("{0}")]
+    PayloadTooLarge(String),
     #[error("Le service d'identité ne répond pas, réessaie dans un instant.")]
     Upstream,
     #[error("Erreur interne.")]
@@ -54,6 +58,19 @@ impl From<axum::extract::rejection::JsonRejection> for ApiError {
     }
 }
 
+impl From<axum::extract::rejection::PathRejection> for ApiError {
+    fn from(_: axum::extract::rejection::PathRejection) -> Self {
+        // Un identifiant non numérique ne désigne simplement rien.
+        ApiError::not_found("Ressource introuvable.")
+    }
+}
+
+impl From<axum::extract::multipart::MultipartRejection> for ApiError {
+    fn from(_: axum::extract::multipart::MultipartRejection) -> Self {
+        ApiError::bad_request("INVALID_FORM", "Formulaire invalide.")
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, code) = match &self {
@@ -63,6 +80,8 @@ impl IntoResponse for ApiError {
             ApiError::BadRequest { code, .. } => (StatusCode::BAD_REQUEST, *code),
             ApiError::Conflict { code, .. } => (StatusCode::CONFLICT, *code),
             ApiError::Unprocessable { code, .. } => (StatusCode::UNPROCESSABLE_ENTITY, *code),
+            ApiError::MethodNotAllowed => (StatusCode::METHOD_NOT_ALLOWED, "METHOD_NOT_ALLOWED"),
+            ApiError::PayloadTooLarge(_) => (StatusCode::PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE"),
             ApiError::Upstream => (StatusCode::BAD_GATEWAY, "UPSTREAM"),
             ApiError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL"),
         };

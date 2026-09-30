@@ -1,4 +1,7 @@
-use super::extract::CurrentUser;
+use super::{
+    extract::CurrentUser,
+    json::{ApiMultipart, ApiPath, multipart_error},
+};
 use crate::{
     error::{ApiError, ApiResult},
     photos,
@@ -8,7 +11,7 @@ use crate::{
 use axum::{
     Json,
     body::Body,
-    extract::{Multipart, Path, State},
+    extract::State,
     http::{StatusCode, header},
     response::Response,
 };
@@ -37,8 +40,8 @@ struct GiftForm {
     remove_photo: bool,
 }
 
-async fn read_form(mut mp: Multipart) -> ApiResult<GiftForm> {
-    let bad = |_: axum::extract::multipart::MultipartError| ApiError::bad_request("INVALID_FORM", "Formulaire invalide.");
+async fn read_form(ApiMultipart(mut mp): ApiMultipart) -> ApiResult<GiftForm> {
+    let bad = multipart_error("Photo trop lourde (5 Mo maximum).");
     let mut form = GiftForm::default();
     while let Some(field) = mp.next_field().await.map_err(bad)? {
         match field.name().unwrap_or_default() {
@@ -80,7 +83,7 @@ async fn save_photo(state: &AppState, bytes: Vec<u8>) -> ApiResult<String> {
     photos::store(&state.config.uploads_dir, &jpeg).await.map_err(|e| ApiError::Internal(e.to_string()))
 }
 
-pub async fn create(State(state): State<AppState>, user: CurrentUser, mp: Multipart) -> ApiResult<(StatusCode, Json<GiftView>)> {
+pub async fn create(State(state): State<AppState>, user: CurrentUser, mp: ApiMultipart) -> ApiResult<(StatusCode, Json<GiftView>)> {
     let form = read_form(mp).await?;
     let (year, description) = validate(&form, state.current_year())?;
     let photo = match form.photo {
@@ -99,7 +102,7 @@ pub async fn create(State(state): State<AppState>, user: CurrentUser, mp: Multip
     Ok((StatusCode::CREATED, Json(gift.into())))
 }
 
-pub async fn update(State(state): State<AppState>, user: CurrentUser, Path(id): Path<i64>, mp: Multipart) -> ApiResult<Json<GiftView>> {
+pub async fn update(State(state): State<AppState>, user: CurrentUser, ApiPath(id): ApiPath<i64>, mp: ApiMultipart) -> ApiResult<Json<GiftView>> {
     let existing = gifts::find_owned(&state.pool, id, user.player_id).await?.ok_or_else(|| ApiError::not_found("Cadeau introuvable."))?;
     let form = read_form(mp).await?;
     let (year, description) = validate(&form, state.current_year())?;
@@ -126,7 +129,7 @@ pub async fn update(State(state): State<AppState>, user: CurrentUser, Path(id): 
     Ok(Json(gift.into()))
 }
 
-pub async fn delete(State(state): State<AppState>, user: CurrentUser, Path(id): Path<i64>) -> ApiResult<StatusCode> {
+pub async fn delete(State(state): State<AppState>, user: CurrentUser, ApiPath(id): ApiPath<i64>) -> ApiResult<StatusCode> {
     let existing = gifts::find_owned(&state.pool, id, user.player_id).await?.ok_or_else(|| ApiError::not_found("Cadeau introuvable."))?;
     gifts::delete(&state.pool, id).await?;
     if let Some(p) = &existing.photo_path {
@@ -135,7 +138,7 @@ pub async fn delete(State(state): State<AppState>, user: CurrentUser, Path(id): 
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn upload(State(state): State<AppState>, _user: CurrentUser, Path(file): Path<String>) -> ApiResult<Response> {
+pub async fn upload(State(state): State<AppState>, _user: CurrentUser, ApiPath(file): ApiPath<String>) -> ApiResult<Response> {
     let not_found = || ApiError::not_found("Photo introuvable.");
     if !photos::is_valid_name(&file) {
         return Err(not_found());

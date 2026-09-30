@@ -7,12 +7,20 @@ pub mod players;
 pub mod json;
 pub mod me;
 
-use crate::state::AppState;
+use crate::{error::ApiError, state::AppState};
 use axum::{Router, extract::DefaultBodyLimit, routing::{get, patch, post, put}};
 use tower_http::trace::TraceLayer;
 
 pub async fn health() -> &'static str {
     "ok"
+}
+
+async fn not_found() -> ApiError {
+    ApiError::not_found("Ressource introuvable.")
+}
+
+async fn method_not_allowed() -> ApiError {
+    ApiError::MethodNotAllowed
 }
 
 pub fn router(state: AppState) -> Router {
@@ -34,7 +42,9 @@ pub fn router(state: AppState) -> Router {
         .route("/editions/current/my-target", get(editions::my_target))
         .route("/admin/editions/current/draw", post(admin::draw_now).delete(admin::cancel_draw))
         .route("/admin/editions/current/mails", get(admin::mails))
-        .route("/admin/editions/current/mails/{player_id}/resend", post(admin::resend));
+        .route("/admin/editions/current/mails/{player_id}/resend", post(admin::resend))
+        .fallback(not_found)
+        .method_not_allowed_fallback(method_not_allowed);
 
     Router::new()
         .nest("/api", api)

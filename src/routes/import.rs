@@ -1,4 +1,7 @@
-use super::extract::AdminUser;
+use super::{
+    extract::AdminUser,
+    json::{ApiMultipart, multipart_error},
+};
 use crate::{
     error::{ApiError, ApiResult},
     legacy_import,
@@ -7,14 +10,14 @@ use crate::{
 };
 use axum::{
     Json,
-    extract::{Multipart, State},
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
 use serde_json::json;
 
-pub async fn import(State(state): State<AppState>, _admin: AdminUser, mut mp: Multipart) -> ApiResult<Response> {
-    let bad = |_: axum::extract::multipart::MultipartError| ApiError::bad_request("INVALID_FORM", "Formulaire invalide.");
+pub async fn import(State(state): State<AppState>, _admin: AdminUser, ApiMultipart(mut mp): ApiMultipart) -> ApiResult<Response> {
+    let bad = multipart_error("Fichier trop lourd.");
     let (mut content, mut year, mut budget) = (None, None, None);
     while let Some(field) = mp.next_field().await.map_err(bad)? {
         match field.name().unwrap_or_default() {

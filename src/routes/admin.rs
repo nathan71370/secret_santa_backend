@@ -1,7 +1,7 @@
 use super::{
     editions::{EditionView, edition_view, require_current},
     extract::AdminUser,
-    json::ApiJson,
+    json::{ApiJson, ApiPath},
 };
 use crate::{
     APP_SLUG,
@@ -20,7 +20,7 @@ use crate::{
 };
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::State,
     http::StatusCode,
 };
 use chrono::{DateTime, TimeZone, Utc};
@@ -167,7 +167,7 @@ pub struct AdminRegistration {
 pub async fn put_registration_for(
     State(state): State<AppState>,
     _admin: AdminUser,
-    Path(player_id): Path<i64>,
+    ApiPath(player_id): ApiPath<i64>,
     ApiJson(body): ApiJson<AdminRegistration>,
 ) -> ApiResult<StatusCode> {
     let e = require_current(&state).await?;
@@ -223,7 +223,7 @@ pub async fn mails(State(state): State<AppState>, _admin: AdminUser) -> ApiResul
 pub async fn resend(
     State(state): State<AppState>,
     _admin: AdminUser,
-    Path(player_id): Path<i64>,
+    ApiPath(player_id): ApiPath<i64>,
 ) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
     let e = require_current(&state).await?;
     if !assignments::set_mail_status(&state.pool, e.id, player_id, MailStatus::Pending, None).await? {
