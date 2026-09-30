@@ -12,5 +12,10 @@ pub struct MeView {
 }
 
 pub async fn me(user: CurrentUser) -> Json<MeView> {
-    Json(MeView { player_id: user.player_id, pseudo: user.pseudo, email: user.email, is_admin: user.is_admin })
+    Json(MeView {
+        player_id: user.player_id,
+        pseudo: user.pseudo,
+        email: user.email,
+        is_admin: user.is_admin,
+    })
 }

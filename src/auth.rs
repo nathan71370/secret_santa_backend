@@ -60,7 +60,10 @@ pub struct HttpAuthClient {
 impl HttpAuthClient {
     pub fn new(base_url: impl Into<String>, ttl: Duration) -> Self {
         Self {
-            http: reqwest::Client::builder().timeout(Duration::from_secs(5)).build().expect("client HTTP"),
+            http: reqwest::Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .expect("client HTTP"),
             base_url: base_url.into().trim_end_matches('/').to_string(),
             ttl,
             cache: Mutex::new(HashMap::new()),
@@ -85,9 +88,10 @@ impl AuthClient for HttpAuthClient {
     async fn session(&self, token: &str) -> Result<Option<SsoSession>, AuthError> {
         let key = Self::cache_key(token);
         if let Some((at, session)) = self.cache.lock().unwrap().get(&key)
-            && at.elapsed() < self.ttl {
-                return Ok(Some(session.clone()));
-            }
+            && at.elapsed() < self.ttl
+        {
+            return Ok(Some(session.clone()));
+        }
 
         let res = self
             .http
@@ -128,7 +132,9 @@ impl AuthClient for HttpAuthClient {
             .map_err(unavailable)?;
         match res.status() {
             StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(AuthError::Forbidden),
-            status if status.is_success() => Ok(res.json::<Body>().await.map_err(unavailable)?.users),
+            status if status.is_success() => {
+                Ok(res.json::<Body>().await.map_err(unavailable)?.users)
+            }
             status => Err(unavailable(format!("statut {status}"))),
         }
     }
@@ -159,6 +165,10 @@ impl AuthClient for DevAuthClient {
     }
 
     async fn list_users(&self, _token: &str, _app: &str) -> Result<Vec<SsoUser>, AuthError> {
-        Ok(vec![SsoUser { user_id: 1, email: self.user.email.clone(), pseudo: self.user.pseudo.clone() }])
+        Ok(vec![SsoUser {
+            user_id: 1,
+            email: self.user.email.clone(),
+            pseudo: self.user.pseudo.clone(),
+        }])
     }
 }

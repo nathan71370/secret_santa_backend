@@ -22,7 +22,10 @@ async fn session_valide_relaie_le_cookie_et_est_mise_en_cache() {
 
     let client = HttpAuthClient::new(server.uri(), Duration::from_secs(60));
     let s = client.session("tok").await.unwrap().unwrap();
-    assert_eq!((s.user_id, s.pseudo.as_str(), s.is_admin), (7, "Alice", false));
+    assert_eq!(
+        (s.user_id, s.pseudo.as_str(), s.is_admin),
+        (7, "Alice", false)
+    );
     assert_eq!(s.apps, ["santa", "dashboard"]);
     // Deuxième appel servi par le cache : `expect(1)` est vérifié à la fin du test.
     assert!(client.session("tok").await.unwrap().is_some());
@@ -45,7 +48,9 @@ async fn cache_expire() {
 async fn session_inconnue_donne_none() {
     let server = MockServer::start().await;
     Mock::given(path("/api/session"))
-        .respond_with(ResponseTemplate::new(401).set_body_json(json!({ "error": "NOT_AUTHENTICATED" })))
+        .respond_with(
+            ResponseTemplate::new(401).set_body_json(json!({ "error": "NOT_AUTHENTICATED" })),
+        )
         .mount(&server)
         .await;
     let client = HttpAuthClient::new(server.uri(), Duration::from_secs(60));
@@ -55,20 +60,35 @@ async fn session_inconnue_donne_none() {
 #[tokio::test]
 async fn erreur_serveur_ou_reponse_illisible_donne_unavailable() {
     let server = MockServer::start().await;
-    Mock::given(path("/api/session")).respond_with(ResponseTemplate::new(500)).mount(&server).await;
+    Mock::given(path("/api/session"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
     let client = HttpAuthClient::new(server.uri(), Duration::from_secs(60));
-    assert!(matches!(client.session("a").await, Err(AuthError::Unavailable(_))));
+    assert!(matches!(
+        client.session("a").await,
+        Err(AuthError::Unavailable(_))
+    ));
 
     let server = MockServer::start().await;
-    Mock::given(path("/api/session")).respond_with(ResponseTemplate::new(200).set_body_string("pas du json")).mount(&server).await;
+    Mock::given(path("/api/session"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("pas du json"))
+        .mount(&server)
+        .await;
     let client = HttpAuthClient::new(server.uri(), Duration::from_secs(60));
-    assert!(matches!(client.session("a").await, Err(AuthError::Unavailable(_))));
+    assert!(matches!(
+        client.session("a").await,
+        Err(AuthError::Unavailable(_))
+    ));
 }
 
 #[tokio::test]
 async fn sso_injoignable_donne_unavailable() {
     let client = HttpAuthClient::new("http://127.0.0.1:1", Duration::from_secs(60));
-    assert!(matches!(client.session("a").await, Err(AuthError::Unavailable(_))));
+    assert!(matches!(
+        client.session("a").await,
+        Err(AuthError::Unavailable(_))
+    ));
 }
 
 #[tokio::test]
@@ -92,14 +112,24 @@ async fn list_users_filtre_par_app_et_relaie_le_cookie() {
 #[tokio::test]
 async fn list_users_refuse_un_non_admin() {
     let server = MockServer::start().await;
-    Mock::given(path("/api/admin/users")).respond_with(ResponseTemplate::new(403)).mount(&server).await;
+    Mock::given(path("/api/admin/users"))
+        .respond_with(ResponseTemplate::new(403))
+        .mount(&server)
+        .await;
     let client = HttpAuthClient::new(server.uri(), Duration::from_secs(60));
-    assert_eq!(client.list_users("pote", "santa").await, Err(AuthError::Forbidden));
+    assert_eq!(
+        client.list_users("pote", "santa").await,
+        Err(AuthError::Forbidden)
+    );
 }
 
 #[tokio::test]
 async fn client_de_dev() {
-    let client = DevAuthClient::new(DevUser { email: "moi@x.fr".into(), pseudo: "Moi".into(), is_admin: true });
+    let client = DevAuthClient::new(DevUser {
+        email: "moi@x.fr".into(),
+        pseudo: "Moi".into(),
+        is_admin: true,
+    });
     let s = client.session("peu importe").await.unwrap().unwrap();
     assert!(s.is_admin);
     assert_eq!(s.apps, ["santa"]);

@@ -1,4 +1,9 @@
-use crate::{auth::AuthClient, clock::{Clock, paris_year}, config::Config, mail::Mailer};
+use crate::{
+    auth::AuthClient,
+    clock::{Clock, paris_year},
+    config::Config,
+    mail::Mailer,
+};
 use chrono::{DateTime, Utc};
 use sqlx::SqlitePool;
 use std::{future::Future, sync::Arc};

@@ -5,7 +5,10 @@
 use crate::{
     error::ApiResult,
     repo::editions,
-    services::{draw_service::{self, DrawOutcome}, mailing},
+    services::{
+        draw_service::{self, DrawOutcome},
+        mailing,
+    },
     state::AppState,
 };
 use std::time::Duration;
@@ -22,13 +25,19 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
             match draw_service::run_draw(state, e.id).await? {
                 DrawOutcome::Drawn => tracing::info!(year = e.year, "tirage automatique effectué"),
                 DrawOutcome::AlreadyDone => {}
-                DrawOutcome::Failed(reason) => tracing::warn!(year = e.year, %reason, "tirage automatique impossible"),
+                DrawOutcome::Failed(reason) => {
+                    tracing::warn!(year = e.year, %reason, "tirage automatique impossible")
+                }
             }
             continue;
         }
         let remind_at = e.deadline - reminder_before();
         let created_early_enough = e.created_at <= remind_at;
-        if e.reminder_sent_at.is_none() && created_early_enough && now >= remind_at && editions::mark_reminder_sent(&state.pool, e.id, now).await? {
+        if e.reminder_sent_at.is_none()
+            && created_early_enough
+            && now >= remind_at
+            && editions::mark_reminder_sent(&state.pool, e.id, now).await?
+        {
             state.spawn(mailing::remind(state.clone(), e.id));
         }
     }

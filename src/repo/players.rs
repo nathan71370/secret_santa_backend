@@ -72,30 +72,52 @@ pub async fn upsert_sso(
 }
 
 /// Instantané de l'annuaire SSO : seuls les comptes listés gardent l'accès.
-pub async fn sync_access(pool: &SqlitePool, users: &[SsoUser], now: DateTime<Utc>) -> Result<(), sqlx::Error> {
+pub async fn sync_access(
+    pool: &SqlitePool,
+    users: &[SsoUser],
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
-    sqlx::query("UPDATE players SET has_access = 0").execute(&mut *tx).await?;
+    sqlx::query("UPDATE players SET has_access = 0")
+        .execute(&mut *tx)
+        .await?;
     for u in users {
-        if upsert_sso(&mut tx, u.user_id, &u.email, &u.pseudo, now).await?.is_none() {
-            tracing::warn!(sso_user_id = u.user_id, "adresse déjà liée à un autre compte SSO : compte ignoré");
+        if upsert_sso(&mut tx, u.user_id, &u.email, &u.pseudo, now)
+            .await?
+            .is_none()
+        {
+            tracing::warn!(
+                sso_user_id = u.user_id,
+                "adresse déjà liée à un autre compte SSO : compte ignoré"
+            );
         }
     }
     tx.commit().await
 }
 
 pub async fn find(pool: &SqlitePool, id: i64) -> Result<Option<Player>, sqlx::Error> {
-    sqlx::query_as(&format!("SELECT {COLS} FROM players WHERE id = ?")).bind(id).fetch_optional(pool).await
+    sqlx::query_as(&format!("SELECT {COLS} FROM players WHERE id = ?"))
+        .bind(id)
+        .fetch_optional(pool)
+        .await
 }
 
 pub async fn with_access(pool: &SqlitePool) -> Result<Vec<Player>, sqlx::Error> {
-    sqlx::query_as(&format!("SELECT {COLS} FROM players WHERE has_access = 1 ORDER BY lower(pseudo)"))
-        .fetch_all(pool)
-        .await
+    sqlx::query_as(&format!(
+        "SELECT {COLS} FROM players WHERE has_access = 1 ORDER BY lower(pseudo)"
+    ))
+    .fetch_all(pool)
+    .await
 }
 
 /// Joueur venu de `players.txt` : créé sans compte SSO s'il est inconnu, le
 /// pseudo existant n'est jamais écrasé.
-pub async fn upsert_imported(conn: &mut SqliteConnection, email: &str, pseudo: &str, now: DateTime<Utc>) -> Result<i64, sqlx::Error> {
+pub async fn upsert_imported(
+    conn: &mut SqliteConnection,
+    email: &str,
+    pseudo: &str,
+    now: DateTime<Utc>,
+) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(
         "INSERT INTO players (email, pseudo, has_access, updated_at) VALUES (?, ?, 0, ?)
          ON CONFLICT (email) DO UPDATE SET email = excluded.email

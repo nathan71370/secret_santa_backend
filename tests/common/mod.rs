@@ -79,7 +79,11 @@ impl Mailer for RecordingMailer {
 
 pub enum Part {
     Text(String),
-    File { filename: String, content_type: String, bytes: Vec<u8> },
+    File {
+        filename: String,
+        content_type: String,
+        bytes: Vec<u8>,
+    },
 }
 
 pub fn text(v: impl Into<String>) -> Part {
@@ -98,7 +102,10 @@ pub struct TestApp {
 impl TestApp {
     /// Horloge figée au 1er novembre 2026, midi UTC.
     pub async fn new() -> Self {
-        Self::with_pool(tempfile::tempdir().unwrap(), db::connect_in_memory().await.unwrap())
+        Self::with_pool(
+            tempfile::tempdir().unwrap(),
+            db::connect_in_memory().await.unwrap(),
+        )
     }
 
     /// Comme `new`, mais sur une vraie base fichier (WAL, 5 connexions) :
@@ -126,7 +133,9 @@ impl TestApp {
         };
         let auth = Arc::new(FakeAuth::default());
         let mailer = Arc::new(RecordingMailer::default());
-        let clock = Arc::new(ManualClock::new(Utc.with_ymd_and_hms(2026, 11, 1, 12, 0, 0).unwrap()));
+        let clock = Arc::new(ManualClock::new(
+            Utc.with_ymd_and_hms(2026, 11, 1, 12, 0, 0).unwrap(),
+        ));
         let state = AppState {
             pool,
             config: Arc::new(config),
@@ -136,7 +145,14 @@ impl TestApp {
             tasks: TaskTracker::new(),
         };
         let router = routes::router(state.clone());
-        Self { state, router, auth, mailer, clock, tmp }
+        Self {
+            state,
+            router,
+            auth,
+            mailer,
+            clock,
+            tmp,
+        }
     }
 
     fn email_of(pseudo: &str) -> String {
@@ -147,7 +163,11 @@ impl TestApp {
     pub fn add_sso_user(&self, sso_id: i64, pseudo: &str) {
         let mut users = self.auth.users.lock().unwrap();
         if !users.iter().any(|u| u.user_id == sso_id) {
-            users.push(SsoUser { user_id: sso_id, email: Self::email_of(pseudo), pseudo: pseudo.into() });
+            users.push(SsoUser {
+                user_id: sso_id,
+                email: Self::email_of(pseudo),
+                pseudo: pseudo.into(),
+            });
         }
     }
 
@@ -165,12 +185,22 @@ impl TestApp {
         let token = format!("tok-{sso_id}");
         self.auth.sessions.lock().unwrap().insert(
             token.clone(),
-            SsoSession { user_id: sso_id, email: Self::email_of(pseudo), pseudo: pseudo.into(), is_admin: admin, apps },
+            SsoSession {
+                user_id: sso_id,
+                email: Self::email_of(pseudo),
+                pseudo: pseudo.into(),
+                is_admin: admin,
+                apps,
+            },
         );
         token
     }
 
-    pub fn request(method: Method, path: &str, token: Option<&str>) -> axum::http::request::Builder {
+    pub fn request(
+        method: Method,
+        path: &str,
+        token: Option<&str>,
+    ) -> axum::http::request::Builder {
         let mut req = Request::builder().method(method.clone()).uri(path);
         if let Some(t) = token {
             req = req.header(header::COOKIE, format!("theme=dark; lim_session={t}"));
@@ -181,10 +211,18 @@ impl TestApp {
         req
     }
 
-    pub async fn call(&self, method: Method, path: &str, token: Option<&str>, body: Option<Value>) -> (StatusCode, Value) {
+    pub async fn call(
+        &self,
+        method: Method,
+        path: &str,
+        token: Option<&str>,
+        body: Option<Value>,
+    ) -> (StatusCode, Value) {
         let req = Self::request(method, path, token);
         let req = match body {
-            Some(v) => req.header(header::CONTENT_TYPE, "application/json").body(Body::from(v.to_string())),
+            Some(v) => req
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(v.to_string())),
             None => req.body(Body::empty()),
         }
         .unwrap();
@@ -201,9 +239,15 @@ impl TestApp {
         self.call(Method::PUT, path, Some(token), Some(body)).await
     }
     pub async fn patch(&self, path: &str, token: &str, body: Value) -> (StatusCode, Value) {
-        self.call(Method::PATCH, path, Some(token), Some(body)).await
+        self.call(Method::PATCH, path, Some(token), Some(body))
+            .await
     }
-    pub async fn delete(&self, path: &str, token: &str, body: Option<Value>) -> (StatusCode, Value) {
+    pub async fn delete(
+        &self,
+        path: &str,
+        token: &str,
+        body: Option<Value>,
+    ) -> (StatusCode, Value) {
         self.call(Method::DELETE, path, Some(token), body).await
     }
 
@@ -218,21 +262,35 @@ impl TestApp {
         let value = if bytes.is_empty() {
             Value::Null
         } else {
-            serde_json::from_slice(&bytes).unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into()))
+            serde_json::from_slice(&bytes)
+                .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into()))
         };
         (status, value)
     }
 
-    pub async fn multipart(&self, method: Method, path: &str, token: &str, parts: Vec<(&str, Part)>) -> (StatusCode, Value) {
+    pub async fn multipart(
+        &self,
+        method: Method,
+        path: &str,
+        token: &str,
+        parts: Vec<(&str, Part)>,
+    ) -> (StatusCode, Value) {
         let boundary = "XSANTABOUNDARYX";
         let mut body = Vec::new();
         for (name, part) in parts {
             body.extend(format!("--{boundary}\r\n").as_bytes());
             match part {
                 Part::Text(v) => {
-                    body.extend(format!("Content-Disposition: form-data; name=\"{name}\"\r\n\r\n{v}\r\n").as_bytes());
+                    body.extend(
+                        format!("Content-Disposition: form-data; name=\"{name}\"\r\n\r\n{v}\r\n")
+                            .as_bytes(),
+                    );
                 }
-                Part::File { filename, content_type, bytes } => {
+                Part::File {
+                    filename,
+                    content_type,
+                    bytes,
+                } => {
                     body.extend(
                         format!("Content-Disposition: form-data; name=\"{name}\"; filename=\"{filename}\"\r\nContent-Type: {content_type}\r\n\r\n").as_bytes(),
                     );
@@ -243,7 +301,10 @@ impl TestApp {
         }
         body.extend(format!("--{boundary}--\r\n").as_bytes());
         let req = Self::request(method, path, Some(token))
-            .header(header::CONTENT_TYPE, format!("multipart/form-data; boundary={boundary}"))
+            .header(
+                header::CONTENT_TYPE,
+                format!("multipart/form-data; boundary={boundary}"),
+            )
             .body(Body::from(body))
             .unwrap();
         self.send(req).await
@@ -265,6 +326,13 @@ impl TestApp {
     }
 
     pub fn mails_to(&self, email: &str) -> Vec<Mail> {
-        self.mailer.sent.lock().unwrap().iter().filter(|m| m.to == email).cloned().collect()
+        self.mailer
+            .sent
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|m| m.to == email)
+            .cloned()
+            .collect()
     }
 }

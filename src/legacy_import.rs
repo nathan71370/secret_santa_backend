@@ -54,14 +54,25 @@ pub fn parse(content: &str) -> ParsedLegacy {
             skip(line, format!("adresse {email} en double"));
             continue;
         }
-        let target = parts.get(2).map(|t| t.to_string()).filter(|t| !t.is_empty());
-        entries.push(Entry { line, name: parts[0].to_string(), email, target });
+        let target = parts
+            .get(2)
+            .map(|t| t.to_string())
+            .filter(|t| !t.is_empty());
+        entries.push(Entry {
+            line,
+            name: parts[0].to_string(),
+            email,
+            target,
+        });
     }
 
     // Nom en minuscules → index de l'entrée ; None si deux joueurs portent ce nom.
     let mut by_name: HashMap<String, Option<usize>> = HashMap::new();
     for (i, e) in entries.iter().enumerate() {
-        by_name.entry(e.name.to_lowercase()).and_modify(|v| *v = None).or_insert(Some(i));
+        by_name
+            .entry(e.name.to_lowercase())
+            .and_modify(|v| *v = None)
+            .or_insert(Some(i));
     }
 
     let mut taken = HashSet::new();
@@ -72,14 +83,23 @@ pub fn parse(content: &str) -> ParsedLegacy {
             continue;
         };
         match by_name.get(&target.to_lowercase()) {
-            None => skip(e.line, format!("cible « {target} » introuvable dans le fichier")),
-            Some(None) => skip(e.line, format!("cible « {target} » ambiguë (nom en double)")),
+            None => skip(
+                e.line,
+                format!("cible « {target} » introuvable dans le fichier"),
+            ),
+            Some(None) => skip(
+                e.line,
+                format!("cible « {target} » ambiguë (nom en double)"),
+            ),
             Some(Some(i)) => {
                 let receiver = &entries[*i];
                 if receiver.email == e.email {
                     skip(e.line, "se cible soi-même".into());
                 } else if !taken.insert(receiver.email.clone()) {
-                    skip(e.line, format!("cible « {} » déjà attribuée", receiver.name));
+                    skip(
+                        e.line,
+                        format!("cible « {} » déjà attribuée", receiver.name),
+                    );
                 } else {
                     pairs.push(LegacyPair {
                         giver_name: e.name.clone(),
@@ -101,42 +121,56 @@ mod tests {
     use super::*;
 
     fn pair(g: &str, ge: &str, r: &str, re: &str) -> LegacyPair {
-        LegacyPair { giver_name: g.into(), giver_email: ge.into(), receiver_name: r.into(), receiver_email: re.into() }
+        LegacyPair {
+            giver_name: g.into(),
+            giver_email: ge.into(),
+            receiver_name: r.into(),
+            receiver_email: re.into(),
+        }
     }
 
     #[test]
     fn fichier_nominal() {
         let parsed = parse("Alice;alice@x.fr;Bob\nBob;bob@x.fr;Chloe\nChloe;chloe@x.fr;Alice\n");
         assert!(parsed.skipped.is_empty());
-        assert_eq!(parsed.pairs, vec![
-            pair("Alice", "alice@x.fr", "Bob", "bob@x.fr"),
-            pair("Bob", "bob@x.fr", "Chloe", "chloe@x.fr"),
-            pair("Chloe", "chloe@x.fr", "Alice", "alice@x.fr"),
-        ]);
+        assert_eq!(
+            parsed.pairs,
+            vec![
+                pair("Alice", "alice@x.fr", "Bob", "bob@x.fr"),
+                pair("Bob", "bob@x.fr", "Chloe", "chloe@x.fr"),
+                pair("Chloe", "chloe@x.fr", "Alice", "alice@x.fr"),
+            ]
+        );
     }
 
     #[test]
     fn tolere_bom_crlf_espaces_casse_et_lignes_vides() {
         let parsed = parse("\u{feff}Alice ; Alice@X.fr ; bob\r\n\r\nBob;bob@x.fr;ALICE\r\n");
         assert!(parsed.skipped.is_empty());
-        assert_eq!(parsed.pairs, vec![
-            pair("Alice", "alice@x.fr", "Bob", "bob@x.fr"),
-            pair("Bob", "bob@x.fr", "Alice", "alice@x.fr"),
-        ]);
+        assert_eq!(
+            parsed.pairs,
+            vec![
+                pair("Alice", "alice@x.fr", "Bob", "bob@x.fr"),
+                pair("Bob", "bob@x.fr", "Alice", "alice@x.fr"),
+            ]
+        );
     }
 
     #[test]
     fn ignore_les_lignes_invalides_avec_leur_raison() {
         let parsed = parse(concat!(
-            "Alice;alice@x.fr;Bob\n",      // 1 ok
-            "n'importe quoi\n",            // 2 mal formée
-            "Bob;bob@x.fr\n",              // 3 pas de cible
-            "Chloe;chloe@x.fr;Zoé\n",      // 4 cible introuvable
-            "Dan;dan@x.fr;Bob\n",          // 5 Bob déjà ciblé par Alice
-            "Alice2;ALICE@x.fr;Chloe\n",   // 6 adresse en double
-            "Eve;eve@x.fr;Eve\n",          // 7 se cible soi-même
+            "Alice;alice@x.fr;Bob\n",    // 1 ok
+            "n'importe quoi\n",          // 2 mal formée
+            "Bob;bob@x.fr\n",            // 3 pas de cible
+            "Chloe;chloe@x.fr;Zoé\n",    // 4 cible introuvable
+            "Dan;dan@x.fr;Bob\n",        // 5 Bob déjà ciblé par Alice
+            "Alice2;ALICE@x.fr;Chloe\n", // 6 adresse en double
+            "Eve;eve@x.fr;Eve\n",        // 7 se cible soi-même
         ));
-        assert_eq!(parsed.pairs, vec![pair("Alice", "alice@x.fr", "Bob", "bob@x.fr")]);
+        assert_eq!(
+            parsed.pairs,
+            vec![pair("Alice", "alice@x.fr", "Bob", "bob@x.fr")]
+        );
         let lines: Vec<_> = parsed.skipped.iter().map(|s| s.line).collect();
         assert_eq!(lines, vec![2, 3, 4, 5, 6, 7]);
         assert!(parsed.skipped[0].reason.contains("mal formée"));

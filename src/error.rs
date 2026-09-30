@@ -33,13 +33,22 @@ pub type ApiResult<T> = Result<T, ApiError>;
 
 impl ApiError {
     pub fn bad_request(code: &'static str, message: impl Into<String>) -> Self {
-        Self::BadRequest { code, message: message.into() }
+        Self::BadRequest {
+            code,
+            message: message.into(),
+        }
     }
     pub fn conflict(code: &'static str, message: impl Into<String>) -> Self {
-        Self::Conflict { code, message: message.into() }
+        Self::Conflict {
+            code,
+            message: message.into(),
+        }
     }
     pub fn unprocessable(code: &'static str, message: impl Into<String>) -> Self {
-        Self::Unprocessable { code, message: message.into() }
+        Self::Unprocessable {
+            code,
+            message: message.into(),
+        }
     }
     pub fn not_found(message: impl Into<String>) -> Self {
         Self::NotFound(message.into())

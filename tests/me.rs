@@ -1,6 +1,9 @@
 mod common;
 
-use axum::{body::Body, http::{Method, Request, StatusCode}};
+use axum::{
+    body::Body,
+    http::{Method, Request, StatusCode},
+};
 use common::TestApp;
 use std::sync::atomic::Ordering;
 
@@ -56,7 +59,13 @@ async fn le_pseudo_suit_le_sso() {
     let token = app.login(1, "Alice", false);
     app.get("/api/me", &token).await;
     let id = app.player_id("Alice").await;
-    app.auth.sessions.lock().unwrap().get_mut(&token).unwrap().pseudo = "Alicia".into();
+    app.auth
+        .sessions
+        .lock()
+        .unwrap()
+        .get_mut(&token)
+        .unwrap()
+        .pseudo = "Alicia".into();
     let (_, body) = app.get("/api/me", &token).await;
     assert_eq!(body["pseudo"], "Alicia");
     assert_eq!(body["playerId"], id);
@@ -65,7 +74,9 @@ async fn le_pseudo_suit_le_sso() {
 #[tokio::test]
 async fn health_sans_authentification() {
     let app = TestApp::new().await;
-    let res = app.response(Request::get("/api/health").body(Body::empty()).unwrap()).await;
+    let res = app
+        .response(Request::get("/api/health").body(Body::empty()).unwrap())
+        .await;
     assert_eq!(res.status(), StatusCode::OK);
 }
 
@@ -105,9 +116,10 @@ async fn une_adresse_liee_a_un_autre_compte_sso_est_refusee() {
     let (status, _) = app.get("/api/me", "tok-2").await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
-    let sso: Option<i64> = sqlx::query_scalar("SELECT sso_user_id FROM players WHERE email = 'alice@x.fr'")
-        .fetch_one(&app.state.pool)
-        .await
-        .unwrap();
+    let sso: Option<i64> =
+        sqlx::query_scalar("SELECT sso_user_id FROM players WHERE email = 'alice@x.fr'")
+            .fetch_one(&app.state.pool)
+            .await
+            .unwrap();
     assert_eq!(sso, Some(1));
 }

@@ -26,13 +26,21 @@ pub struct EditionView {
     pub imported: bool,
 }
 
-pub async fn edition_view(state: &AppState, e: &Edition, viewer: &CurrentUser) -> ApiResult<EditionView> {
+pub async fn edition_view(
+    state: &AppState,
+    e: &Edition,
+    viewer: &CurrentUser,
+) -> ApiResult<EditionView> {
     Ok(EditionView {
         year: e.year,
         budget_eur: e.budget_eur,
         deadline: e.deadline,
         status: e.status,
-        failure_reason: if viewer.is_admin { e.failure_reason.clone() } else { None },
+        failure_reason: if viewer.is_admin {
+            e.failure_reason.clone()
+        } else {
+            None
+        },
         drawn_at: e.drawn_at,
         participants: editions::participants(&state.pool, e.id).await?,
         my_registration: editions::registration_of(&state.pool, e.id, viewer.player_id).await?,
@@ -45,10 +53,15 @@ pub async fn current_edition(state: &AppState) -> ApiResult<Option<Edition>> {
 }
 
 pub async fn require_current(state: &AppState) -> ApiResult<Edition> {
-    current_edition(state).await?.ok_or_else(|| ApiError::not_found("Aucune édition cette année."))
+    current_edition(state)
+        .await?
+        .ok_or_else(|| ApiError::not_found("Aucune édition cette année."))
 }
 
-pub async fn get_current(State(state): State<AppState>, user: CurrentUser) -> ApiResult<Json<Option<EditionView>>> {
+pub async fn get_current(
+    State(state): State<AppState>,
+    user: CurrentUser,
+) -> ApiResult<Json<Option<EditionView>>> {
     match current_edition(&state).await? {
         None => Ok(Json(None)),
         Some(e) => Ok(Json(Some(edition_view(&state, &e, &user).await?))),
@@ -66,13 +79,27 @@ pub async fn put_registration(
     ApiJson(body): ApiJson<RegistrationBody>,
 ) -> ApiResult<Json<EditionView>> {
     let e = require_current(&state).await?;
-    if !editions::register_while_open(&state.pool, e.id, user.player_id, body.participating, state.now()).await? {
-        return Err(ApiError::conflict("REGISTRATION_CLOSED", "Les inscriptions sont closes."));
+    if !editions::register_while_open(
+        &state.pool,
+        e.id,
+        user.player_id,
+        body.participating,
+        state.now(),
+    )
+    .await?
+    {
+        return Err(ApiError::conflict(
+            "REGISTRATION_CLOSED",
+            "Les inscriptions sont closes.",
+        ));
     }
     Ok(Json(edition_view(&state, &e, &user).await?))
 }
 
-pub async fn my_target(State(state): State<AppState>, user: CurrentUser) -> ApiResult<Json<PlayerRef>> {
+pub async fn my_target(
+    State(state): State<AppState>,
+    user: CurrentUser,
+) -> ApiResult<Json<PlayerRef>> {
     let not_found = || ApiError::not_found("Pas de cible pour toi cette année.");
     let e = current_edition(&state).await?.ok_or_else(not_found)?;
     if e.status != EditionStatus::Drawn {

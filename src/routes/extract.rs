@@ -39,8 +39,13 @@ fn check_origin(headers: &HeaderMap, expected: &str) -> Result<(), ApiError> {
 impl FromRequestParts<AppState> for CurrentUser {
     type Rejection = ApiError;
 
-    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
-        let unauthorized = || ApiError::Unauthorized { login_url: state.config.auth_login_url.clone() };
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let unauthorized = || ApiError::Unauthorized {
+            login_url: state.config.auth_login_url.clone(),
+        };
 
         let token = match cookie_value(&parts.headers, SESSION_COOKIE) {
             Some(t) => t,
@@ -66,10 +71,19 @@ impl FromRequestParts<AppState> for CurrentUser {
         }
 
         let mut conn = state.pool.acquire().await?;
-        let Some(player_id) =
-            players::upsert_sso(&mut conn, session.user_id, &session.email, &session.pseudo, state.now()).await?
+        let Some(player_id) = players::upsert_sso(
+            &mut conn,
+            session.user_id,
+            &session.email,
+            &session.pseudo,
+            state.now(),
+        )
+        .await?
         else {
-            tracing::warn!(sso_user_id = session.user_id, "adresse déjà liée à un autre compte SSO : accès refusé");
+            tracing::warn!(
+                sso_user_id = session.user_id,
+                "adresse déjà liée à un autre compte SSO : accès refusé"
+            );
             return Err(ApiError::Forbidden);
         };
 
@@ -86,7 +100,10 @@ impl FromRequestParts<AppState> for CurrentUser {
 impl FromRequestParts<AppState> for AdminUser {
     type Rejection = ApiError;
 
-    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
         let user = CurrentUser::from_request_parts(parts, state).await?;
         if !user.is_admin {
             return Err(ApiError::Forbidden);
@@ -103,7 +120,10 @@ mod tests {
     #[test]
     fn lit_le_cookie_parmi_d_autres() {
         let mut h = HeaderMap::new();
-        h.append(header::COOKIE, HeaderValue::from_static("a=1; lim_session=abc; b=2"));
+        h.append(
+            header::COOKIE,
+            HeaderValue::from_static("a=1; lim_session=abc; b=2"),
+        );
         assert_eq!(cookie_value(&h, "lim_session").as_deref(), Some("abc"));
         assert_eq!(cookie_value(&h, "absent"), None);
     }
@@ -119,9 +139,15 @@ mod tests {
     fn controle_d_origine() {
         let mut h = HeaderMap::new();
         assert!(check_origin(&h, "https://santa.test").is_err());
-        h.insert(header::ORIGIN, HeaderValue::from_static("https://tierlistrr.test"));
+        h.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://tierlistrr.test"),
+        );
         assert!(check_origin(&h, "https://santa.test").is_err());
-        h.insert(header::ORIGIN, HeaderValue::from_static("https://santa.test"));
+        h.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://santa.test"),
+        );
         assert!(check_origin(&h, "https://santa.test").is_ok());
     }
 }

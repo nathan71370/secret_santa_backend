@@ -28,7 +28,12 @@ pub struct GiftView {
 
 impl From<Gift> for GiftView {
     fn from(g: Gift) -> Self {
-        GiftView { id: g.id, year: g.year, description: g.description, photo_url: g.photo_path.map(|p| format!("/api/uploads/{p}")) }
+        GiftView {
+            id: g.id,
+            year: g.year,
+            description: g.description,
+            photo_url: g.photo_path.map(|p| format!("/api/uploads/{p}")),
+        }
     }
 }
 
@@ -66,10 +71,26 @@ fn validate(form: &GiftForm, current_year: i64) -> ApiResult<(i64, String)> {
         .as_deref()
         .and_then(|y| y.trim().parse::<i64>().ok())
         .filter(|y| (2000..=current_year + 1).contains(y))
-        .ok_or_else(|| ApiError::bad_request("INVALID_YEAR", format!("L'année doit être comprise entre 2000 et {}.", current_year + 1)))?;
-    let description = form.description.as_deref().unwrap_or_default().trim().to_string();
+        .ok_or_else(|| {
+            ApiError::bad_request(
+                "INVALID_YEAR",
+                format!(
+                    "L'année doit être comprise entre 2000 et {}.",
+                    current_year + 1
+                ),
+            )
+        })?;
+    let description = form
+        .description
+        .as_deref()
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     if description.is_empty() || description.chars().count() > 500 {
-        return Err(ApiError::bad_request("INVALID_DESCRIPTION", "La description doit faire entre 1 et 500 caractères."));
+        return Err(ApiError::bad_request(
+            "INVALID_DESCRIPTION",
+            "La description doit faire entre 1 et 500 caractères.",
+        ));
     }
     Ok((year, description))
 }
@@ -80,17 +101,32 @@ async fn save_photo(state: &AppState, bytes: Vec<u8>) -> ApiResult<String> {
         .await
         .map_err(|e| ApiError::Internal(e.to_string()))?
         .map_err(|e| ApiError::bad_request("INVALID_PHOTO", e.to_string()))?;
-    photos::store(&state.config.uploads_dir, &jpeg).await.map_err(|e| ApiError::Internal(e.to_string()))
+    photos::store(&state.config.uploads_dir, &jpeg)
+        .await
+        .map_err(|e| ApiError::Internal(e.to_string()))
 }
 
-pub async fn create(State(state): State<AppState>, user: CurrentUser, mp: ApiMultipart) -> ApiResult<(StatusCode, Json<GiftView>)> {
+pub async fn create(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    mp: ApiMultipart,
+) -> ApiResult<(StatusCode, Json<GiftView>)> {
     let form = read_form(mp).await?;
     let (year, description) = validate(&form, state.current_year())?;
     let photo = match form.photo {
         Some(bytes) => Some(save_photo(&state, bytes).await?),
         None => None,
     };
-    let gift = match gifts::insert(&state.pool, user.player_id, year, &description, photo.as_deref(), state.now()).await {
+    let gift = match gifts::insert(
+        &state.pool,
+        user.player_id,
+        year,
+        &description,
+        photo.as_deref(),
+        state.now(),
+    )
+    .await
+    {
         Ok(gift) => gift,
         Err(e) => {
             if let Some(name) = &photo {
@@ -102,8 +138,15 @@ pub async fn create(State(state): State<AppState>, user: CurrentUser, mp: ApiMul
     Ok((StatusCode::CREATED, Json(gift.into())))
 }
 
-pub async fn update(State(state): State<AppState>, user: CurrentUser, ApiPath(id): ApiPath<i64>, mp: ApiMultipart) -> ApiResult<Json<GiftView>> {
-    let existing = gifts::find_owned(&state.pool, id, user.player_id).await?.ok_or_else(|| ApiError::not_found("Cadeau introuvable."))?;
+pub async fn update(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    ApiPath(id): ApiPath<i64>,
+    mp: ApiMultipart,
+) -> ApiResult<Json<GiftView>> {
+    let existing = gifts::find_owned(&state.pool, id, user.player_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("Cadeau introuvable."))?;
     let form = read_form(mp).await?;
     let (year, description) = validate(&form, state.current_year())?;
     let mut photo = existing.photo_path.clone();
@@ -117,9 +160,10 @@ pub async fn update(State(state): State<AppState>, user: CurrentUser, ApiPath(id
         Ok(gift) => gift,
         Err(e) => {
             if let (true, Some(new)) = (replaced, &photo)
-                && existing.photo_path.as_ref() != Some(new) {
-                    photos::remove(&state.config.uploads_dir, new).await;
-                }
+                && existing.photo_path.as_ref() != Some(new)
+            {
+                photos::remove(&state.config.uploads_dir, new).await;
+            }
             return Err(e.into());
         }
     };
@@ -129,8 +173,14 @@ pub async fn update(State(state): State<AppState>, user: CurrentUser, ApiPath(id
     Ok(Json(gift.into()))
 }
 
-pub async fn delete(State(state): State<AppState>, user: CurrentUser, ApiPath(id): ApiPath<i64>) -> ApiResult<StatusCode> {
-    let existing = gifts::find_owned(&state.pool, id, user.player_id).await?.ok_or_else(|| ApiError::not_found("Cadeau introuvable."))?;
+pub async fn delete(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    ApiPath(id): ApiPath<i64>,
+) -> ApiResult<StatusCode> {
+    let existing = gifts::find_owned(&state.pool, id, user.player_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("Cadeau introuvable."))?;
     gifts::delete(&state.pool, id).await?;
     if let Some(p) = &existing.photo_path {
         photos::remove(&state.config.uploads_dir, p).await;
@@ -138,15 +188,24 @@ pub async fn delete(State(state): State<AppState>, user: CurrentUser, ApiPath(id
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn upload(State(state): State<AppState>, _user: CurrentUser, ApiPath(file): ApiPath<String>) -> ApiResult<Response> {
+pub async fn upload(
+    State(state): State<AppState>,
+    _user: CurrentUser,
+    ApiPath(file): ApiPath<String>,
+) -> ApiResult<Response> {
     let not_found = || ApiError::not_found("Photo introuvable.");
     if !photos::is_valid_name(&file) {
         return Err(not_found());
     }
-    let bytes = tokio::fs::read(state.config.uploads_dir.join(&file)).await.map_err(|_| not_found())?;
+    let bytes = tokio::fs::read(state.config.uploads_dir.join(&file))
+        .await
+        .map_err(|_| not_found())?;
     Response::builder()
         .header(header::CONTENT_TYPE, "image/jpeg")
-        .header(header::CACHE_CONTROL, "private, max-age=31536000, immutable")
+        .header(
+            header::CACHE_CONTROL,
+            "private, max-age=31536000, immutable",
+        )
         .body(Body::from(bytes))
         .map_err(|e| ApiError::Internal(e.to_string()))
 }

@@ -2,7 +2,10 @@
 //! orientées, réduites, puis réencodées en JPEG — ce qui efface les
 //! métadonnées EXIF, géolocalisation comprise.
 
-use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader, codecs::jpeg::JpegEncoder, imageops::FilterType, metadata::Orientation, Limits};
+use image::{
+    DynamicImage, ImageDecoder, ImageFormat, ImageReader, Limits, codecs::jpeg::JpegEncoder,
+    imageops::FilterType, metadata::Orientation,
+};
 use std::{io::Cursor, path::Path};
 
 pub const MAX_BYTES: usize = 5 * 1024 * 1024;
@@ -26,7 +29,10 @@ pub fn normalize(bytes: &[u8]) -> Result<Vec<u8>, PhotoError> {
         return Err(PhotoError::TooLarge);
     }
     let format = image::guess_format(bytes).map_err(|_| PhotoError::UnsupportedFormat)?;
-    if !matches!(format, ImageFormat::Jpeg | ImageFormat::Png | ImageFormat::WebP) {
+    if !matches!(
+        format,
+        ImageFormat::Jpeg | ImageFormat::Png | ImageFormat::WebP
+    ) {
         return Err(PhotoError::UnsupportedFormat);
     }
     let mut decoder = ImageReader::with_format(Cursor::new(bytes), format)
@@ -42,7 +48,9 @@ pub fn normalize(bytes: &[u8]) -> Result<Vec<u8>, PhotoError> {
     limits.max_image_width = Some(MAX_DECODE_SIDE);
     limits.max_image_height = Some(MAX_DECODE_SIDE);
     limits.max_alloc = Some(MAX_DECODE_ALLOC);
-    decoder.set_limits(limits).map_err(|_| PhotoError::Unreadable)?;
+    decoder
+        .set_limits(limits)
+        .map_err(|_| PhotoError::Unreadable)?;
     let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
     let mut img = DynamicImage::from_decoder(decoder).map_err(|_| PhotoError::Unreadable)?;
     img.apply_orientation(orientation);
@@ -58,7 +66,8 @@ pub fn normalize(bytes: &[u8]) -> Result<Vec<u8>, PhotoError> {
 
 /// `<uuid v4>.jpg` uniquement : ferme la porte aux `../` sur la route de lecture.
 pub fn is_valid_name(name: &str) -> bool {
-    name.strip_suffix(".jpg").is_some_and(|stem| stem.len() == 36 && uuid::Uuid::parse_str(stem).is_ok())
+    name.strip_suffix(".jpg")
+        .is_some_and(|stem| stem.len() == 36 && uuid::Uuid::parse_str(stem).is_ok())
 }
 
 pub async fn store(dir: &Path, jpeg: &[u8]) -> std::io::Result<String> {
@@ -70,9 +79,10 @@ pub async fn store(dir: &Path, jpeg: &[u8]) -> std::io::Result<String> {
 
 pub async fn remove(dir: &Path, name: &str) {
     if is_valid_name(name)
-        && let Err(e) = tokio::fs::remove_file(dir.join(name)).await {
-            tracing::warn!(error = %e, "photo non supprimée");
-        }
+        && let Err(e) = tokio::fs::remove_file(dir.join(name)).await
+    {
+        tracing::warn!(error = %e, "photo non supprimée");
+    }
 }
 
 #[cfg(test)]
@@ -95,7 +105,11 @@ mod tests {
         for &b in data {
             crc ^= u32::from(b);
             for _ in 0..8 {
-                crc = if crc & 1 == 1 { (crc >> 1) ^ 0xEDB8_8320 } else { crc >> 1 };
+                crc = if crc & 1 == 1 {
+                    (crc >> 1) ^ 0xEDB8_8320
+                } else {
+                    crc >> 1
+                };
             }
         }
         !crc
@@ -118,12 +132,18 @@ mod tests {
     #[test]
     fn refuse_ce_qui_n_est_pas_une_image_prise_en_charge() {
         assert_eq!(normalize(b"bonjour"), Err(PhotoError::UnsupportedFormat));
-        assert_eq!(normalize(b"GIF89a\x01\x00\x01\x00\x00\x00\x00"), Err(PhotoError::UnsupportedFormat));
+        assert_eq!(
+            normalize(b"GIF89a\x01\x00\x01\x00\x00\x00\x00"),
+            Err(PhotoError::UnsupportedFormat)
+        );
     }
 
     #[test]
     fn refuse_plus_de_5_mo() {
-        assert_eq!(normalize(&vec![0u8; MAX_BYTES + 1]), Err(PhotoError::TooLarge));
+        assert_eq!(
+            normalize(&vec![0u8; MAX_BYTES + 1]),
+            Err(PhotoError::TooLarge)
+        );
     }
 
     #[test]

@@ -43,25 +43,40 @@ impl SmtpMailer {
         .map_err(|e| err(&e))?
         .port(cfg.port);
         let builder = match (&cfg.user, &cfg.pass) {
-            (Some(user), Some(pass)) => builder.credentials(Credentials::new(user.clone(), pass.clone())),
+            (Some(user), Some(pass)) => {
+                builder.credentials(Credentials::new(user.clone(), pass.clone()))
+            }
             _ => builder,
         };
         let from = cfg.from.parse::<Mailbox>().map_err(|e| err(&e))?;
-        Ok(Self { transport: builder.build(), from })
+        Ok(Self {
+            transport: builder.build(),
+            from,
+        })
     }
 }
 
 #[async_trait]
 impl Mailer for SmtpMailer {
     async fn send(&self, mail: &Mail) -> Result<(), MailError> {
-        let to = mail.to.parse::<Mailbox>().map_err(|e| MailError(e.to_string()))?;
+        let to = mail
+            .to
+            .parse::<Mailbox>()
+            .map_err(|e| MailError(e.to_string()))?;
         let message = Message::builder()
             .from(self.from.clone())
             .to(to)
             .subject(&mail.subject)
-            .multipart(MultiPart::alternative_plain_html(mail.text.clone(), mail.html.clone()))
+            .multipart(MultiPart::alternative_plain_html(
+                mail.text.clone(),
+                mail.html.clone(),
+            ))
             .map_err(|e| MailError(e.to_string()))?;
-        self.transport.send(message).await.map(|_| ()).map_err(|e| MailError(e.to_string()))
+        self.transport
+            .send(message)
+            .await
+            .map(|_| ())
+            .map_err(|e| MailError(e.to_string()))
     }
 }
 

@@ -36,7 +36,10 @@ pub async fn run_draw(state: &AppState, edition_id: i64) -> ApiResult<DrawOutcom
         return Ok(DrawOutcome::AlreadyDone);
     }
 
-    let year: i64 = sqlx::query_scalar("SELECT year FROM editions WHERE id = ?").bind(edition_id).fetch_one(&mut *tx).await?;
+    let year: i64 = sqlx::query_scalar("SELECT year FROM editions WHERE id = ?")
+        .bind(edition_id)
+        .fetch_one(&mut *tx)
+        .await?;
     let participants: Vec<i64> =
         sqlx::query_scalar("SELECT player_id FROM registrations WHERE edition_id = ? AND participating = 1 ORDER BY player_id")
             .bind(edition_id)
@@ -65,7 +68,8 @@ pub async fn run_draw(state: &AppState, edition_id: i64) -> ApiResult<DrawOutcom
         }
         Ok(pairs) => {
             for (giver, receiver) in pairs {
-                assignments::insert(&mut tx, edition_id, giver, receiver, MailStatus::Pending).await?;
+                assignments::insert(&mut tx, edition_id, giver, receiver, MailStatus::Pending)
+                    .await?;
             }
             tx.commit().await?;
             tracing::info!(year, participants = participants.len(), "tirage effectué");
@@ -77,7 +81,11 @@ pub async fn run_draw(state: &AppState, edition_id: i64) -> ApiResult<DrawOutcom
 
 /// Dernier recours : efface les paires et rouvre les inscriptions. Les mails
 /// déjà partis ne sont pas rattrapés.
-pub async fn cancel_draw(state: &AppState, edition_id: i64, new_deadline: DateTime<Utc>) -> ApiResult<bool> {
+pub async fn cancel_draw(
+    state: &AppState,
+    edition_id: i64,
+    new_deadline: DateTime<Utc>,
+) -> ApiResult<bool> {
     let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
     let reopened = sqlx::query(
         "UPDATE editions SET status = 'open', drawn_at = NULL, deadline = ?, reminder_sent_at = NULL WHERE id = ? AND status = 'drawn'",
@@ -91,7 +99,10 @@ pub async fn cancel_draw(state: &AppState, edition_id: i64, new_deadline: DateTi
         tx.rollback().await?;
         return Ok(false);
     }
-    sqlx::query("DELETE FROM assignments WHERE edition_id = ?").bind(edition_id).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM assignments WHERE edition_id = ?")
+        .bind(edition_id)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     tracing::warn!(edition_id, "tirage annulé par l'admin");
     Ok(true)

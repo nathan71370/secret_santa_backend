@@ -49,8 +49,17 @@ impl Config {
     }
 
     pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Result<Self, ConfigError> {
-        let var = |k: &str| get(k).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
-        let url = |k: &str, default: &str| var(k).unwrap_or_else(|| default.to_string()).trim_end_matches('/').to_string();
+        let var = |k: &str| {
+            get(k)
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+        };
+        let url = |k: &str, default: &str| {
+            var(k)
+                .unwrap_or_else(|| default.to_string())
+                .trim_end_matches('/')
+                .to_string()
+        };
 
         let dev_mode = var("APP_ENV").as_deref() == Some("development");
 
@@ -60,16 +69,26 @@ impl Config {
             Some(raw) => Some(parse_dev_user(&raw)?),
         };
 
-        let admin_email = var("ADMIN_EMAIL").ok_or(ConfigError::Missing("ADMIN_EMAIL"))?.to_lowercase();
+        let admin_email = var("ADMIN_EMAIL")
+            .ok_or(ConfigError::Missing("ADMIN_EMAIL"))?
+            .to_lowercase();
 
         let smtp = match var("SMTP_HOST") {
             Some(host) => {
                 let port = match var("SMTP_PORT") {
                     None => 587,
-                    Some(p) => p.parse().map_err(|_| ConfigError::Invalid("SMTP_PORT", p.clone()))?,
+                    Some(p) => p
+                        .parse()
+                        .map_err(|_| ConfigError::Invalid("SMTP_PORT", p.clone()))?,
                 };
                 let from = var("SMTP_FROM").ok_or(ConfigError::Missing("SMTP_FROM"))?;
-                Some(SmtpConfig { host, port, user: var("SMTP_USER"), pass: var("SMTP_PASS"), from })
+                Some(SmtpConfig {
+                    host,
+                    port,
+                    user: var("SMTP_USER"),
+                    pass: var("SMTP_PASS"),
+                    from,
+                })
             }
             None if dev_mode => None,
             None => return Err(ConfigError::Missing("SMTP_HOST")),
@@ -77,13 +96,17 @@ impl Config {
 
         let mail_delay_ms: u64 = match var("MAIL_DELAY_MS") {
             None => 1000,
-            Some(v) => v.parse().map_err(|_| ConfigError::Invalid("MAIL_DELAY_MS", v.clone()))?,
+            Some(v) => v
+                .parse()
+                .map_err(|_| ConfigError::Invalid("MAIL_DELAY_MS", v.clone()))?,
         };
 
         Ok(Config {
             bind_addr: var("BIND_ADDR").unwrap_or_else(|| "0.0.0.0:8080".into()),
             database_path: var("DATABASE_PATH").unwrap_or_else(|| "/data/santa.db".into()),
-            uploads_dir: var("UPLOADS_DIR").unwrap_or_else(|| "/data/uploads".into()).into(),
+            uploads_dir: var("UPLOADS_DIR")
+                .unwrap_or_else(|| "/data/uploads".into())
+                .into(),
             auth_url: url("AUTH_URL", "http://limperiam-auth:3000"),
             auth_login_url: url("AUTH_LOGIN_URL", "https://auth.limperiam.com/login"),
             public_origin: url("PUBLIC_ORIGIN", "https://santa.limperiam.com"),
@@ -107,7 +130,11 @@ fn parse_dev_user(raw: &str) -> Result<DevUser, ConfigError> {
     if !email.contains('@') || pseudo.is_empty() {
         return Err(invalid());
     }
-    Ok(DevUser { email: email.to_lowercase(), pseudo: pseudo.to_string(), is_admin })
+    Ok(DevUser {
+        email: email.to_lowercase(),
+        pseudo: pseudo.to_string(),
+        is_admin,
+    })
 }
 
 #[cfg(test)]
@@ -116,8 +143,10 @@ mod tests {
     use std::collections::HashMap;
 
     fn lookup(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
-        let map: HashMap<String, String> =
-            pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let map: HashMap<String, String> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
         move |k| map.get(k).cloned()
     }
 
@@ -146,25 +175,39 @@ mod tests {
 
     #[test]
     fn smtp_host_obligatoire_en_production() {
-        let err = Config::from_lookup(lookup(&[("ADMIN_EMAIL", "a@x.fr"), ("SMTP_FROM", "a@x.fr")])).unwrap_err();
+        let err = Config::from_lookup(lookup(&[
+            ("ADMIN_EMAIL", "a@x.fr"),
+            ("SMTP_FROM", "a@x.fr"),
+        ]))
+        .unwrap_err();
         assert_eq!(err, ConfigError::Missing("SMTP_HOST"));
     }
 
     #[test]
     fn admin_email_obligatoire() {
-        let err = Config::from_lookup(lookup(&[("SMTP_HOST", "h"), ("SMTP_FROM", "a@x.fr")])).unwrap_err();
+        let err = Config::from_lookup(lookup(&[("SMTP_HOST", "h"), ("SMTP_FROM", "a@x.fr")]))
+            .unwrap_err();
         assert_eq!(err, ConfigError::Missing("ADMIN_EMAIL"));
     }
 
     #[test]
     fn une_variable_vide_compte_comme_absente() {
-        let err = Config::from_lookup(lookup(&[("ADMIN_EMAIL", "a@x.fr"), ("SMTP_HOST", "  "), ("SMTP_FROM", "a@x.fr")])).unwrap_err();
+        let err = Config::from_lookup(lookup(&[
+            ("ADMIN_EMAIL", "a@x.fr"),
+            ("SMTP_HOST", "  "),
+            ("SMTP_FROM", "a@x.fr"),
+        ]))
+        .unwrap_err();
         assert_eq!(err, ConfigError::Missing("SMTP_HOST"));
     }
 
     #[test]
     fn developpement_sans_smtp() {
-        let c = Config::from_lookup(lookup(&[("ADMIN_EMAIL", "a@x.fr"), ("APP_ENV", "development")])).unwrap();
+        let c = Config::from_lookup(lookup(&[
+            ("ADMIN_EMAIL", "a@x.fr"),
+            ("APP_ENV", "development"),
+        ]))
+        .unwrap();
         assert!(c.dev_mode);
         assert!(c.smtp.is_none());
     }
@@ -173,7 +216,10 @@ mod tests {
     fn utilisateur_de_dev_interdit_en_production() {
         let mut env = PROD.to_vec();
         env.push(("AUTH_DEV_USER", "a@x.fr,A,admin"));
-        assert_eq!(Config::from_lookup(lookup(&env)).unwrap_err(), ConfigError::DevUserInProduction);
+        assert_eq!(
+            Config::from_lookup(lookup(&env)).unwrap_err(),
+            ConfigError::DevUserInProduction
+        );
     }
 
     #[test]
@@ -184,7 +230,14 @@ mod tests {
             ("AUTH_DEV_USER", " Moi@X.fr , Moi , admin "),
         ]))
         .unwrap();
-        assert_eq!(c.dev_user, Some(DevUser { email: "moi@x.fr".into(), pseudo: "Moi".into(), is_admin: true }));
+        assert_eq!(
+            c.dev_user,
+            Some(DevUser {
+                email: "moi@x.fr".into(),
+                pseudo: "Moi".into(),
+                is_admin: true
+            })
+        );
 
         let c = Config::from_lookup(lookup(&[
             ("ADMIN_EMAIL", "a@x.fr"),
@@ -199,7 +252,10 @@ mod tests {
     fn port_smtp_invalide() {
         let mut env = PROD.to_vec();
         env.push(("SMTP_PORT", "abc"));
-        assert!(matches!(Config::from_lookup(lookup(&env)).unwrap_err(), ConfigError::Invalid("SMTP_PORT", _)));
+        assert!(matches!(
+            Config::from_lookup(lookup(&env)).unwrap_err(),
+            ConfigError::Invalid("SMTP_PORT", _)
+        ));
     }
 
     #[test]

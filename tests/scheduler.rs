@@ -12,12 +12,27 @@ async fn setup(deadline_in: Duration, joined: &[&str], silent: &[&str]) -> (Test
     for (i, p) in silent.iter().enumerate() {
         app.add_sso_user(100 + i as i64, p);
     }
-    let tokens: Vec<_> = joined.iter().enumerate().map(|(i, p)| app.login(10 + i as i64, p, false)).collect();
+    let tokens: Vec<_> = joined
+        .iter()
+        .enumerate()
+        .map(|(i, p)| app.login(10 + i as i64, p, false))
+        .collect();
     let deadline = (app.clock.now() + deadline_in).to_rfc3339();
-    let (status, _) = app.post("/api/admin/editions", &admin, json!({ "budgetEur": 30, "deadline": deadline })).await;
+    let (status, _) = app
+        .post(
+            "/api/admin/editions",
+            &admin,
+            json!({ "budgetEur": 30, "deadline": deadline }),
+        )
+        .await;
     assert_eq!(status, StatusCode::CREATED);
     for t in &tokens {
-        app.put("/api/editions/current/registration", t, json!({ "participating": true })).await;
+        app.put(
+            "/api/editions/current/registration",
+            t,
+            json!({ "participating": true }),
+        )
+        .await;
     }
     app.settle().await;
     app.mailer.sent.lock().unwrap().clear();
@@ -34,7 +49,12 @@ async fn rien_avant_la_fenetre_de_relance() {
 
 #[tokio::test]
 async fn relance_une_seule_fois_aux_seuls_non_repondants() {
-    let (app, admin) = setup(Duration::days(10), &["Alice", "Bob", "Chloe"], &["Dan", "Eve"]).await;
+    let (app, admin) = setup(
+        Duration::days(10),
+        &["Alice", "Bob", "Chloe"],
+        &["Dan", "Eve"],
+    )
+    .await;
     app.clock.advance(Duration::days(8) + Duration::hours(1)); // J-47h
     scheduler::tick(&app.state).await.unwrap();
     scheduler::tick(&app.state).await.unwrap();
@@ -66,7 +86,11 @@ async fn tirage_automatique_a_la_deadline() {
     let (_, view) = app.get("/api/editions/current", &admin).await;
     assert_eq!(view["status"], "drawn");
     for email in ["alice@x.fr", "bob@x.fr", "chloe@x.fr"] {
-        assert!(app.mails_to(email).iter().any(|m| m.subject.contains("ton tirage")));
+        assert!(
+            app.mails_to(email)
+                .iter()
+                .any(|m| m.subject.contains("ton tirage"))
+        );
     }
     // Un tour de plus ne refait rien.
     app.mailer.sent.lock().unwrap().clear();

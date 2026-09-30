@@ -1,7 +1,7 @@
 mod common;
 
-use axum::http::{Method, Request, StatusCode, header};
 use axum::body::Body;
+use axum::http::{Method, Request, StatusCode, header};
 use chrono::Duration;
 use common::TestApp;
 use serde_json::json;
@@ -13,7 +13,13 @@ fn in_days(app: &TestApp, days: i64) -> String {
 }
 
 async fn open_edition(app: &TestApp, admin: &str) -> serde_json::Value {
-    let (status, body) = app.post("/api/admin/editions", admin, json!({ "budgetEur": 30, "deadline": in_days(app, 20) })).await;
+    let (status, body) = app
+        .post(
+            "/api/admin/editions",
+            admin,
+            json!({ "budgetEur": 30, "deadline": in_days(app, 20) }),
+        )
+        .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
     body
 }
@@ -52,18 +58,51 @@ async fn l_admin_cree_l_edition_et_l_annonce_part_a_tous() {
 async fn creation_refusee_aux_non_admins_et_validee() {
     let app = TestApp::new().await;
     let pote = app.login(2, "Bob", false);
-    let (status, _) = app.post("/api/admin/editions", &pote, json!({ "budgetEur": 30, "deadline": in_days(&app, 5) })).await;
+    let (status, _) = app
+        .post(
+            "/api/admin/editions",
+            &pote,
+            json!({ "budgetEur": 30, "deadline": in_days(&app, 5) }),
+        )
+        .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
     let admin = app.login(1, "Nathan", true);
-    let (status, body) = app.post("/api/admin/editions", &admin, json!({ "budgetEur": 30, "deadline": in_days(&app, -1) })).await;
-    assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("INVALID_DEADLINE")));
-    let (status, body) = app.post("/api/admin/editions", &admin, json!({ "budgetEur": 0, "deadline": in_days(&app, 5) })).await;
-    assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("INVALID_BUDGET")));
+    let (status, body) = app
+        .post(
+            "/api/admin/editions",
+            &admin,
+            json!({ "budgetEur": 30, "deadline": in_days(&app, -1) }),
+        )
+        .await;
+    assert_eq!(
+        (status, body["error"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("INVALID_DEADLINE"))
+    );
+    let (status, body) = app
+        .post(
+            "/api/admin/editions",
+            &admin,
+            json!({ "budgetEur": 0, "deadline": in_days(&app, 5) }),
+        )
+        .await;
+    assert_eq!(
+        (status, body["error"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("INVALID_BUDGET"))
+    );
 
     open_edition(&app, &admin).await;
-    let (status, body) = app.post("/api/admin/editions", &admin, json!({ "budgetEur": 30, "deadline": in_days(&app, 5) })).await;
-    assert_eq!((status, body["error"].as_str()), (StatusCode::CONFLICT, Some("EDITION_EXISTS")));
+    let (status, body) = app
+        .post(
+            "/api/admin/editions",
+            &admin,
+            json!({ "budgetEur": 30, "deadline": in_days(&app, 5) }),
+        )
+        .await;
+    assert_eq!(
+        (status, body["error"].as_str()),
+        (StatusCode::CONFLICT, Some("EDITION_EXISTS"))
+    );
 }
 
 #[tokio::test]
@@ -72,7 +111,13 @@ async fn creation_impossible_si_le_sso_est_injoignable() {
     let admin = app.login(1, "Nathan", true);
     app.get("/api/me", &admin).await; // session mise en place avant la panne
     app.auth.down.store(true, Ordering::SeqCst);
-    let (status, _) = app.post("/api/admin/editions", &admin, json!({ "budgetEur": 30, "deadline": in_days(&app, 5) })).await;
+    let (status, _) = app
+        .post(
+            "/api/admin/editions",
+            &admin,
+            json!({ "budgetEur": 30, "deadline": in_days(&app, 5) }),
+        )
+        .await;
     // La session elle-même n'est plus vérifiable : échec fermé.
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
@@ -84,12 +129,27 @@ async fn un_joueur_s_inscrit_puis_change_d_avis() {
     let bob = app.login(2, "Bob", false);
     open_edition(&app, &admin).await;
 
-    let (status, body) = app.put("/api/editions/current/registration", &bob, json!({ "participating": true })).await;
+    let (status, body) = app
+        .put(
+            "/api/editions/current/registration",
+            &bob,
+            json!({ "participating": true }),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["myRegistration"], true);
-    assert_eq!(body["participants"], json!([{ "playerId": app.player_id("Bob").await, "pseudo": "Bob" }]));
+    assert_eq!(
+        body["participants"],
+        json!([{ "playerId": app.player_id("Bob").await, "pseudo": "Bob" }])
+    );
 
-    let (_, body) = app.put("/api/editions/current/registration", &bob, json!({ "participating": false })).await;
+    let (_, body) = app
+        .put(
+            "/api/editions/current/registration",
+            &bob,
+            json!({ "participating": false }),
+        )
+        .await;
     assert_eq!(body["myRegistration"], false);
     assert_eq!(body["participants"], json!([]));
 
@@ -104,15 +164,30 @@ async fn inscriptions_closes_apres_la_deadline() {
     let bob = app.login(2, "Bob", false);
     open_edition(&app, &admin).await;
     app.clock.advance(Duration::days(21));
-    let (status, body) = app.put("/api/editions/current/registration", &bob, json!({ "participating": true })).await;
-    assert_eq!((status, body["error"].as_str()), (StatusCode::CONFLICT, Some("REGISTRATION_CLOSED")));
+    let (status, body) = app
+        .put(
+            "/api/editions/current/registration",
+            &bob,
+            json!({ "participating": true }),
+        )
+        .await;
+    assert_eq!(
+        (status, body["error"].as_str()),
+        (StatusCode::CONFLICT, Some("REGISTRATION_CLOSED"))
+    );
 }
 
 #[tokio::test]
 async fn inscription_sans_edition_404() {
     let app = TestApp::new().await;
     let bob = app.login(2, "Bob", false);
-    let (status, _) = app.put("/api/editions/current/registration", &bob, json!({ "participating": true })).await;
+    let (status, _) = app
+        .put(
+            "/api/editions/current/registration",
+            &bob,
+            json!({ "participating": true }),
+        )
+        .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
@@ -143,22 +218,60 @@ async fn l_admin_voit_l_annuaire_et_repond_a_la_place_d_un_joueur() {
 
     let (status, body) = app.get("/api/admin/sso-users", &admin).await;
     assert_eq!(status, StatusCode::OK);
-    let pseudos: Vec<_> = body.as_array().unwrap().iter().map(|u| u["pseudo"].as_str().unwrap().to_string()).collect();
+    let pseudos: Vec<_> = body
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|u| u["pseudo"].as_str().unwrap().to_string())
+        .collect();
     assert_eq!(pseudos, ["Bob", "Chloe", "Nathan"]);
-    assert!(body.as_array().unwrap().iter().all(|u| u["registration"].is_null()));
+    assert!(
+        body.as_array()
+            .unwrap()
+            .iter()
+            .all(|u| u["registration"].is_null())
+    );
 
     let chloe = app.player_id("Chloe").await;
-    let (status, _) = app.put(&format!("/api/admin/editions/current/registrations/{chloe}"), &admin, json!({ "participating": true })).await;
+    let (status, _) = app
+        .put(
+            &format!("/api/admin/editions/current/registrations/{chloe}"),
+            &admin,
+            json!({ "participating": true }),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK);
     let (_, body) = app.get("/api/admin/sso-users", &admin).await;
-    let row = body.as_array().unwrap().iter().find(|u| u["pseudo"] == "Chloe").unwrap();
-    assert_eq!((row["registration"].as_bool(), row["answeredByAdmin"].as_bool()), (Some(true), Some(true)));
+    let row = body
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["pseudo"] == "Chloe")
+        .unwrap();
+    assert_eq!(
+        (
+            row["registration"].as_bool(),
+            row["answeredByAdmin"].as_bool()
+        ),
+        (Some(true), Some(true))
+    );
     assert_eq!(row["email"], "chloe@x.fr");
 
-    let (status, _) = app.put(&format!("/api/admin/editions/current/registrations/{chloe}"), &admin, json!({ "participating": null })).await;
+    let (status, _) = app
+        .put(
+            &format!("/api/admin/editions/current/registrations/{chloe}"),
+            &admin,
+            json!({ "participating": null }),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK);
     let (_, body) = app.get("/api/admin/sso-users", &admin).await;
-    let row = body.as_array().unwrap().iter().find(|u| u["pseudo"] == "Chloe").unwrap();
+    let row = body
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["pseudo"] == "Chloe")
+        .unwrap();
     assert!(row["registration"].is_null());
 }
 
@@ -179,7 +292,13 @@ async fn l_admin_modifie_budget_et_deadline() {
     let admin = app.login(1, "Nathan", true);
     open_edition(&app, &admin).await;
     let new_deadline = in_days(&app, 30);
-    let (status, body) = app.patch("/api/admin/editions/current", &admin, json!({ "budgetEur": 40, "deadline": new_deadline })).await;
+    let (status, body) = app
+        .patch(
+            "/api/admin/editions/current",
+            &admin,
+            json!({ "budgetEur": 40, "deadline": new_deadline }),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["budgetEur"], 40);
     assert_eq!(
@@ -193,8 +312,17 @@ async fn patch_invalide_ne_modifie_rien() {
     let app = TestApp::new().await;
     let admin = app.login(1, "Nathan", true);
     open_edition(&app, &admin).await;
-    let (status, body) = app.patch("/api/admin/editions/current", &admin, json!({ "budgetEur": 50, "deadline": in_days(&app, -1) })).await;
-    assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("INVALID_DEADLINE")));
+    let (status, body) = app
+        .patch(
+            "/api/admin/editions/current",
+            &admin,
+            json!({ "budgetEur": 50, "deadline": in_days(&app, -1) }),
+        )
+        .await;
+    assert_eq!(
+        (status, body["error"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("INVALID_DEADLINE"))
+    );
     let (_, body) = app.get("/api/editions/current", &admin).await;
     assert_eq!(body["budgetEur"], 30);
 }
@@ -204,29 +332,79 @@ async fn corps_json_invalide_renvoie_une_erreur_json() {
     let app = TestApp::new().await;
     let admin = app.login(1, "Nathan", true);
     open_edition(&app, &admin).await;
-    let (status, body) = app.put("/api/editions/current/registration", &admin, json!({ "participating": "oui" })).await;
-    assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("INVALID_BODY")));
-    let (status, body) = app.post("/api/admin/editions", &admin, json!({ "budgetEur": 30 })).await;
-    assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("INVALID_BODY")));
+    let (status, body) = app
+        .put(
+            "/api/editions/current/registration",
+            &admin,
+            json!({ "participating": "oui" }),
+        )
+        .await;
+    assert_eq!(
+        (status, body["error"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("INVALID_BODY"))
+    );
+    let (status, body) = app
+        .post("/api/admin/editions", &admin, json!({ "budgetEur": 30 }))
+        .await;
+    assert_eq!(
+        (status, body["error"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("INVALID_BODY"))
+    );
 }
 
 #[tokio::test]
 async fn deadline_apres_le_31_decembre_refusee() {
     let app = TestApp::new().await;
     let admin = app.login(1, "Nathan", true);
-    let (status, body) = app.post("/api/admin/editions", &admin, json!({ "budgetEur": 30, "deadline": "2027-01-03T12:00:00Z" })).await;
-    assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("INVALID_DEADLINE")));
-    assert_eq!(body["message"], "La deadline doit tomber avant le 1er janvier.");
+    let (status, body) = app
+        .post(
+            "/api/admin/editions",
+            &admin,
+            json!({ "budgetEur": 30, "deadline": "2027-01-03T12:00:00Z" }),
+        )
+        .await;
+    assert_eq!(
+        (status, body["error"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("INVALID_DEADLINE"))
+    );
+    assert_eq!(
+        body["message"],
+        "La deadline doit tomber avant le 1er janvier."
+    );
 
     // 31 décembre 23h30 à Paris : encore l'année de l'édition.
     open_edition(&app, &admin).await;
-    let (status, body) = app.patch("/api/admin/editions/current", &admin, json!({ "deadline": "2026-12-31T22:30:00Z" })).await;
+    let (status, body) = app
+        .patch(
+            "/api/admin/editions/current",
+            &admin,
+            json!({ "deadline": "2026-12-31T22:30:00Z" }),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     // 1er janvier 0h00 à Paris (23h00 UTC) : déjà trop tard.
-    let (status, body) = app.patch("/api/admin/editions/current", &admin, json!({ "deadline": "2026-12-31T23:00:00Z" })).await;
-    assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("INVALID_DEADLINE")));
-    let (status, body) = app.patch("/api/admin/editions/current", &admin, json!({ "deadline": "2027-01-03T12:00:00Z" })).await;
-    assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("INVALID_DEADLINE")));
+    let (status, body) = app
+        .patch(
+            "/api/admin/editions/current",
+            &admin,
+            json!({ "deadline": "2026-12-31T23:00:00Z" }),
+        )
+        .await;
+    assert_eq!(
+        (status, body["error"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("INVALID_DEADLINE"))
+    );
+    let (status, body) = app
+        .patch(
+            "/api/admin/editions/current",
+            &admin,
+            json!({ "deadline": "2027-01-03T12:00:00Z" }),
+        )
+        .await;
+    assert_eq!(
+        (status, body["error"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("INVALID_DEADLINE"))
+    );
 }
 
 #[tokio::test]
@@ -236,9 +414,24 @@ async fn inscription_refusee_des_que_l_edition_n_est_plus_ouverte() {
     let bob = app.login(2, "Bob", false);
     open_edition(&app, &admin).await;
     // Le tirage vient de passer, deadline encore future : l'écriture doit échouer.
-    sqlx::query("UPDATE editions SET status = 'drawn'").execute(&app.state.pool).await.unwrap();
-    let (status, body) = app.put("/api/editions/current/registration", &bob, json!({ "participating": true })).await;
-    assert_eq!((status, body["error"].as_str()), (StatusCode::CONFLICT, Some("REGISTRATION_CLOSED")));
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM registrations").fetch_one(&app.state.pool).await.unwrap();
+    sqlx::query("UPDATE editions SET status = 'drawn'")
+        .execute(&app.state.pool)
+        .await
+        .unwrap();
+    let (status, body) = app
+        .put(
+            "/api/editions/current/registration",
+            &bob,
+            json!({ "participating": true }),
+        )
+        .await;
+    assert_eq!(
+        (status, body["error"].as_str()),
+        (StatusCode::CONFLICT, Some("REGISTRATION_CLOSED"))
+    );
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM registrations")
+        .fetch_one(&app.state.pool)
+        .await
+        .unwrap();
     assert_eq!(count, 0);
 }

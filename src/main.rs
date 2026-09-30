@@ -15,7 +15,9 @@ use tracing_subscriber::EnvFilter;
 #[tokio::main]
 async fn main() -> ExitCode {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .init();
 
     let config = match Config::from_env() {
@@ -40,10 +42,15 @@ async fn main() -> ExitCode {
 
     let auth: Arc<dyn AuthClient> = match &config.dev_user {
         Some(user) => {
-            tracing::warn!("AUTH_DEV_USER actif : le SSO est court-circuité (développement uniquement)");
+            tracing::warn!(
+                "AUTH_DEV_USER actif : le SSO est court-circuité (développement uniquement)"
+            );
             Arc::new(DevAuthClient::new(user.clone()))
         }
-        None => Arc::new(HttpAuthClient::new(config.auth_url.clone(), Duration::from_secs(60))),
+        None => Arc::new(HttpAuthClient::new(
+            config.auth_url.clone(),
+            Duration::from_secs(60),
+        )),
     };
 
     let mailer: Arc<dyn Mailer> = match (&config.smtp, config.dev_mode) {
@@ -82,7 +89,10 @@ async fn main() -> ExitCode {
     };
     tracing::info!(addr = %bind_addr, "Secret Santa à l'écoute");
 
-    if let Err(e) = axum::serve(listener, routes::router(state.clone())).with_graceful_shutdown(shutdown_signal()).await {
+    if let Err(e) = axum::serve(listener, routes::router(state.clone()))
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+    {
         tracing::error!("serveur arrêté sur une erreur : {e}");
         return ExitCode::FAILURE;
     }
@@ -90,7 +100,10 @@ async fn main() -> ExitCode {
     // Laisser finir une vague de mails en cours ; au pire, ils repartiront au
     // prochain démarrage (statut `pending`).
     state.tasks.close();
-    if tokio::time::timeout(Duration::from_secs(30), state.tasks.wait()).await.is_err() {
+    if tokio::time::timeout(Duration::from_secs(30), state.tasks.wait())
+        .await
+        .is_err()
+    {
         tracing::warn!("arrêt avant la fin des envois : ils reprendront au prochain démarrage");
     }
     ExitCode::SUCCESS
@@ -102,7 +115,8 @@ async fn shutdown_signal() {
     };
     #[cfg(unix)]
     let terminate = async {
-        if let Ok(mut s) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+        if let Ok(mut s) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        {
             s.recv().await;
         }
     };

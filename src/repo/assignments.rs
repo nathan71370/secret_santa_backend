@@ -28,7 +28,13 @@ pub struct MailRow {
     pub mail_error: Option<String>,
 }
 
-pub async fn insert(conn: &mut SqliteConnection, edition_id: i64, giver: i64, receiver: i64, status: MailStatus) -> Result<(), sqlx::Error> {
+pub async fn insert(
+    conn: &mut SqliteConnection,
+    edition_id: i64,
+    giver: i64,
+    receiver: i64,
+    status: MailStatus,
+) -> Result<(), sqlx::Error> {
     sqlx::query("INSERT INTO assignments (edition_id, giver_id, receiver_id, mail_status) VALUES (?, ?, ?, ?)")
         .bind(edition_id)
         .bind(giver)
@@ -40,7 +46,10 @@ pub async fn insert(conn: &mut SqliteConnection, edition_id: i64, giver: i64, re
 }
 
 /// Paires de l'édition tirée la plus récente d'une année antérieure.
-pub async fn previous_targets(conn: &mut SqliteConnection, year: i64) -> Result<HashMap<i64, i64>, sqlx::Error> {
+pub async fn previous_targets(
+    conn: &mut SqliteConnection,
+    year: i64,
+) -> Result<HashMap<i64, i64>, sqlx::Error> {
     let rows: Vec<(i64, i64)> = sqlx::query_as(
         "SELECT giver_id, receiver_id FROM assignments
          WHERE edition_id = (SELECT id FROM editions WHERE status = 'drawn' AND year < ? ORDER BY year DESC LIMIT 1)",
@@ -51,7 +60,11 @@ pub async fn previous_targets(conn: &mut SqliteConnection, year: i64) -> Result<
     Ok(rows.into_iter().collect())
 }
 
-pub async fn target_of(pool: &SqlitePool, edition_id: i64, giver: i64) -> Result<Option<PlayerRef>, sqlx::Error> {
+pub async fn target_of(
+    pool: &SqlitePool,
+    edition_id: i64,
+    giver: i64,
+) -> Result<Option<PlayerRef>, sqlx::Error> {
     sqlx::query_as(
         "SELECT p.id AS player_id, p.pseudo FROM assignments a JOIN players p ON p.id = a.receiver_id
          WHERE a.edition_id = ? AND a.giver_id = ?",
@@ -62,7 +75,10 @@ pub async fn target_of(pool: &SqlitePool, edition_id: i64, giver: i64) -> Result
     .await
 }
 
-pub async fn mail_statuses(pool: &SqlitePool, edition_id: i64) -> Result<Vec<MailRow>, sqlx::Error> {
+pub async fn mail_statuses(
+    pool: &SqlitePool,
+    edition_id: i64,
+) -> Result<Vec<MailRow>, sqlx::Error> {
     sqlx::query_as(
         "SELECT p.id AS player_id, p.pseudo, a.mail_status, a.mail_error FROM assignments a
          JOIN players p ON p.id = a.giver_id WHERE a.edition_id = ? ORDER BY lower(p.pseudo)",
@@ -79,7 +95,13 @@ pub async fn pending(pool: &SqlitePool, edition_id: i64) -> Result<Vec<i64>, sql
         .await
 }
 
-pub async fn set_mail_status(pool: &SqlitePool, edition_id: i64, giver: i64, status: MailStatus, error: Option<&str>) -> Result<bool, sqlx::Error> {
+pub async fn set_mail_status(
+    pool: &SqlitePool,
+    edition_id: i64,
+    giver: i64,
+    status: MailStatus,
+    error: Option<&str>,
+) -> Result<bool, sqlx::Error> {
     let done = sqlx::query("UPDATE assignments SET mail_status = ?, mail_error = ? WHERE edition_id = ? AND giver_id = ?")
         .bind(status)
         .bind(error)
@@ -92,7 +114,11 @@ pub async fn set_mail_status(pool: &SqlitePool, edition_id: i64, giver: i64, sta
 
 /// Réclame l'envoi (`pending → sending`). `false` : quelqu'un d'autre l'a déjà
 /// réclamé, ou il n'y a rien à envoyer.
-pub async fn claim_for_sending(pool: &SqlitePool, edition_id: i64, giver: i64) -> Result<bool, sqlx::Error> {
+pub async fn claim_for_sending(
+    pool: &SqlitePool,
+    edition_id: i64,
+    giver: i64,
+) -> Result<bool, sqlx::Error> {
     let done = sqlx::query("UPDATE assignments SET mail_status = 'sending' WHERE edition_id = ? AND giver_id = ? AND mail_status = 'pending'")
         .bind(edition_id)
         .bind(giver)
@@ -103,10 +129,15 @@ pub async fn claim_for_sending(pool: &SqlitePool, edition_id: i64, giver: i64) -
 
 /// Au démarrage : un envoi coupé par un arrêt redevient `pending`.
 pub async fn reset_sending(pool: &SqlitePool) -> Result<u64, sqlx::Error> {
-    let done = sqlx::query("UPDATE assignments SET mail_status = 'pending' WHERE mail_status = 'sending'").execute(pool).await?;
+    let done =
+        sqlx::query("UPDATE assignments SET mail_status = 'pending' WHERE mail_status = 'sending'")
+            .execute(pool)
+            .await?;
     Ok(done.rows_affected())
 }
 
 pub async fn editions_with_pending(pool: &SqlitePool) -> Result<Vec<i64>, sqlx::Error> {
-    sqlx::query_scalar("SELECT DISTINCT edition_id FROM assignments WHERE mail_status = 'pending'").fetch_all(pool).await
+    sqlx::query_scalar("SELECT DISTINCT edition_id FROM assignments WHERE mail_status = 'pending'")
+        .fetch_all(pool)
+        .await
 }

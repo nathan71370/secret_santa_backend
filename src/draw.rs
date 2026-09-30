@@ -15,7 +15,9 @@ pub const MAX_ATTEMPTS: usize = 1000;
 pub enum DrawError {
     #[error("Il faut au moins {MIN_PARTICIPANTS} participants (inscrits : {0}).")]
     NotEnoughParticipants(usize),
-    #[error("Impossible de trouver un tirage valide après {0} essais : la contrainte « pas la même cible que l'an dernier » bloque.")]
+    #[error(
+        "Impossible de trouver un tirage valide après {0} essais : la contrainte « pas la même cible que l'an dernier » bloque."
+    )]
     NoValidDraw(usize),
 }
 
@@ -30,8 +32,13 @@ pub fn draw<R: Rng + ?Sized>(
     let mut order = participants.to_vec();
     for _ in 0..MAX_ATTEMPTS {
         order.shuffle(rng);
-        let pairs: Vec<_> = (0..order.len()).map(|i| (order[i], order[(i + 1) % order.len()])).collect();
-        if pairs.iter().all(|(giver, receiver)| previous.get(giver) != Some(receiver)) {
+        let pairs: Vec<_> = (0..order.len())
+            .map(|i| (order[i], order[(i + 1) % order.len()]))
+            .collect();
+        if pairs
+            .iter()
+            .all(|(giver, receiver)| previous.get(giver) != Some(receiver))
+        {
             return Ok(pairs);
         }
     }
@@ -50,8 +57,14 @@ mod tests {
 
     #[test]
     fn refuse_moins_de_trois_participants() {
-        assert_eq!(draw(&[1, 2], &HashMap::new(), &mut rng(1)), Err(DrawError::NotEnoughParticipants(2)));
-        assert_eq!(draw(&[], &HashMap::new(), &mut rng(1)), Err(DrawError::NotEnoughParticipants(0)));
+        assert_eq!(
+            draw(&[1, 2], &HashMap::new(), &mut rng(1)),
+            Err(DrawError::NotEnoughParticipants(2))
+        );
+        assert_eq!(
+            draw(&[], &HashMap::new(), &mut rng(1)),
+            Err(DrawError::NotEnoughParticipants(0))
+        );
     }
 
     #[test]
@@ -72,7 +85,10 @@ mod tests {
     fn forme_un_seul_cycle() {
         let ids = [1, 2, 3, 4, 5];
         for seed in 0..100 {
-            let pairs: HashMap<_, _> = draw(&ids, &HashMap::new(), &mut rng(seed)).unwrap().into_iter().collect();
+            let pairs: HashMap<_, _> = draw(&ids, &HashMap::new(), &mut rng(seed))
+                .unwrap()
+                .into_iter()
+                .collect();
             let mut current = ids[0];
             let mut visited = HashSet::new();
             for _ in 0..ids.len() {
@@ -99,7 +115,10 @@ mod tests {
         // À trois, seuls deux cycles existent : 1→2→3→1 et 1→3→2→1.
         // 1→2 interdit le premier, 2→1 interdit le second.
         let previous = HashMap::from([(1, 2), (2, 1)]);
-        assert_eq!(draw(&[1, 2, 3], &previous, &mut rng(7)), Err(DrawError::NoValidDraw(MAX_ATTEMPTS)));
+        assert_eq!(
+            draw(&[1, 2, 3], &previous, &mut rng(7)),
+            Err(DrawError::NoValidDraw(MAX_ATTEMPTS))
+        );
     }
 
     #[test]
@@ -110,7 +129,14 @@ mod tests {
 
     #[test]
     fn messages_en_francais() {
-        assert_eq!(DrawError::NotEnoughParticipants(2).to_string(), "Il faut au moins 3 participants (inscrits : 2).");
-        assert!(DrawError::NoValidDraw(1000).to_string().contains("1000 essais"));
+        assert_eq!(
+            DrawError::NotEnoughParticipants(2).to_string(),
+            "Il faut au moins 3 participants (inscrits : 2)."
+        );
+        assert!(
+            DrawError::NoValidDraw(1000)
+                .to_string()
+                .contains("1000 essais")
+        );
     }
 }

@@ -18,11 +18,7 @@ use crate::{
     },
     state::AppState,
 };
-use axum::{
-    Json,
-    extract::State,
-    http::StatusCode,
-};
+use axum::{Json, extract::State, http::StatusCode};
 use chrono::{DateTime, TimeZone, Utc};
 use chrono_tz::Europe::Paris;
 use serde::{Deserialize, Serialize};
@@ -41,7 +37,10 @@ fn validate_budget(budget: i64) -> ApiResult<()> {
     if (1..=1000).contains(&budget) {
         Ok(())
     } else {
-        Err(ApiError::bad_request("INVALID_BUDGET", "Le budget doit être compris entre 1 et 1000 €."))
+        Err(ApiError::bad_request(
+            "INVALID_BUDGET",
+            "Le budget doit être compris entre 1 et 1000 €.",
+        ))
     }
 }
 
@@ -49,22 +48,33 @@ fn validate_budget(budget: i64) -> ApiResult<()> {
 /// appartient à son année civile.
 fn validate_deadline(state: &AppState, deadline: DateTime<Utc>) -> ApiResult<()> {
     if deadline <= state.now() {
-        return Err(ApiError::bad_request("INVALID_DEADLINE", "La deadline doit être dans le futur."));
+        return Err(ApiError::bad_request(
+            "INVALID_DEADLINE",
+            "La deadline doit être dans le futur.",
+        ));
     }
-    let next_year = i32::try_from(state.current_year() + 1).map_err(|e| ApiError::Internal(e.to_string()))?;
+    let next_year =
+        i32::try_from(state.current_year() + 1).map_err(|e| ApiError::Internal(e.to_string()))?;
     let year_end = Paris
         .with_ymd_and_hms(next_year, 1, 1, 0, 0, 0)
         .single()
         .ok_or_else(|| ApiError::Internal("1er janvier introuvable à Paris".into()))?;
     if deadline >= year_end {
-        return Err(ApiError::bad_request("INVALID_DEADLINE", "La deadline doit tomber avant le 1er janvier."));
+        return Err(ApiError::bad_request(
+            "INVALID_DEADLINE",
+            "La deadline doit tomber avant le 1er janvier.",
+        ));
     }
     Ok(())
 }
 
 /// Rafraîchit l'instantané des comptes ayant accès à l'app, au nom de l'admin.
 async fn refresh_directory(state: &AppState, admin: &AdminUser) -> ApiResult<()> {
-    let users = state.auth.list_users(&admin.0.token, APP_SLUG).await.map_err(auth_error)?;
+    let users = state
+        .auth
+        .list_users(&admin.0.token, APP_SLUG)
+        .await
+        .map_err(auth_error)?;
     players::sync_access(&state.pool, &users, state.now()).await?;
     Ok(())
 }
@@ -79,7 +89,10 @@ pub struct DirectoryEntry {
     pub answered_by_admin: bool,
 }
 
-pub async fn sso_users(State(state): State<AppState>, admin: AdminUser) -> ApiResult<Json<Vec<DirectoryEntry>>> {
+pub async fn sso_users(
+    State(state): State<AppState>,
+    admin: AdminUser,
+) -> ApiResult<Json<Vec<DirectoryEntry>>> {
     refresh_directory(&state, &admin).await?;
     let regs = match super::editions::current_edition(&state).await? {
         Some(e) => editions::registrations(&state.pool, e.id).await?,
@@ -118,12 +131,25 @@ pub async fn create_edition(
     validate_deadline(&state, body.deadline)?;
     let year = state.current_year();
     if editions::by_year(&state.pool, year).await?.is_some() {
-        return Err(ApiError::conflict("EDITION_EXISTS", format!("L'édition {year} existe déjà.")));
+        return Err(ApiError::conflict(
+            "EDITION_EXISTS",
+            format!("L'édition {year} existe déjà."),
+        ));
     }
     refresh_directory(&state, &admin).await?;
-    let edition = editions::create_open(&state.pool, year, body.budget_eur, body.deadline, state.now()).await?;
+    let edition = editions::create_open(
+        &state.pool,
+        year,
+        body.budget_eur,
+        body.deadline,
+        state.now(),
+    )
+    .await?;
     state.spawn(mailing::announce(state.clone(), edition.id));
-    Ok((StatusCode::CREATED, Json(edition_view(&state, &edition, &admin.0).await?)))
+    Ok((
+        StatusCode::CREATED,
+        Json(edition_view(&state, &edition, &admin.0).await?),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -140,7 +166,10 @@ pub async fn patch_edition(
 ) -> ApiResult<Json<EditionView>> {
     let e = require_current(&state).await?;
     if e.status == EditionStatus::Drawn {
-        return Err(ApiError::conflict("EDITION_DRAWN", "Le tirage a déjà eu lieu."));
+        return Err(ApiError::conflict(
+            "EDITION_DRAWN",
+            "Le tirage a déjà eu lieu.",
+        ));
     }
     if let Some(budget) = body.budget_eur {
         validate_budget(budget)?;
@@ -172,26 +201,46 @@ pub async fn put_registration_for(
 ) -> ApiResult<StatusCode> {
     let e = require_current(&state).await?;
     if e.status != EditionStatus::Open {
-        return Err(ApiError::conflict("REGISTRATION_CLOSED", "Les inscriptions sont closes."));
+        return Err(ApiError::conflict(
+            "REGISTRATION_CLOSED",
+            "Les inscriptions sont closes.",
+        ));
     }
     if players::find(&state.pool, player_id).await?.is_none() {
         return Err(ApiError::not_found("Joueur inconnu."));
     }
-    editions::set_registration(&state.pool, e.id, player_id, body.participating, true, state.now()).await?;
+    editions::set_registration(
+        &state.pool,
+        e.id,
+        player_id,
+        body.participating,
+        true,
+        state.now(),
+    )
+    .await?;
     Ok(StatusCode::OK)
 }
 
-pub async fn draw_now(State(state): State<AppState>, admin: AdminUser) -> ApiResult<Json<EditionView>> {
+pub async fn draw_now(
+    State(state): State<AppState>,
+    admin: AdminUser,
+) -> ApiResult<Json<EditionView>> {
     let e = require_current(&state).await?;
     if e.status == EditionStatus::Drawn {
-        return Err(ApiError::conflict("ALREADY_DRAWN", "Le tirage a déjà eu lieu."));
+        return Err(ApiError::conflict(
+            "ALREADY_DRAWN",
+            "Le tirage a déjà eu lieu.",
+        ));
     }
     match draw_service::run_draw(&state, e.id).await? {
         DrawOutcome::Drawn => {
             let e = require_current(&state).await?;
             Ok(Json(edition_view(&state, &e, &admin.0).await?))
         }
-        DrawOutcome::AlreadyDone => Err(ApiError::conflict("ALREADY_DRAWN", "Le tirage a déjà eu lieu.")),
+        DrawOutcome::AlreadyDone => Err(ApiError::conflict(
+            "ALREADY_DRAWN",
+            "Le tirage a déjà eu lieu.",
+        )),
         DrawOutcome::Failed(reason) => Err(ApiError::unprocessable("DRAW_FAILED", reason)),
     }
 }
@@ -209,13 +258,19 @@ pub async fn cancel_draw(
     validate_deadline(&state, body.deadline)?;
     let e = require_current(&state).await?;
     if !draw_service::cancel_draw(&state, e.id, body.deadline).await? {
-        return Err(ApiError::conflict("NOT_DRAWN", "Il n'y a pas de tirage à annuler."));
+        return Err(ApiError::conflict(
+            "NOT_DRAWN",
+            "Il n'y a pas de tirage à annuler.",
+        ));
     }
     let e = require_current(&state).await?;
     Ok(Json(edition_view(&state, &e, &admin.0).await?))
 }
 
-pub async fn mails(State(state): State<AppState>, _admin: AdminUser) -> ApiResult<Json<Vec<MailRow>>> {
+pub async fn mails(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+) -> ApiResult<Json<Vec<MailRow>>> {
     let e = require_current(&state).await?;
     Ok(Json(assignments::mail_statuses(&state.pool, e.id).await?))
 }
@@ -226,8 +281,12 @@ pub async fn resend(
     ApiPath(player_id): ApiPath<i64>,
 ) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
     let e = require_current(&state).await?;
-    if !assignments::set_mail_status(&state.pool, e.id, player_id, MailStatus::Pending, None).await? {
-        return Err(ApiError::not_found("Ce joueur ne fait pas partie du tirage."));
+    if !assignments::set_mail_status(&state.pool, e.id, player_id, MailStatus::Pending, None)
+        .await?
+    {
+        return Err(ApiError::not_found(
+            "Ce joueur ne fait pas partie du tirage.",
+        ));
     }
     let task_state = state.clone();
     state.spawn(async move {
@@ -235,5 +294,8 @@ pub async fn resend(
             tracing::error!(error = %err, "renvoi impossible");
         }
     });
-    Ok((StatusCode::ACCEPTED, Json(serde_json::json!({ "mailStatus": "pending" }))))
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(serde_json::json!({ "mailStatus": "pending" })),
+    ))
 }

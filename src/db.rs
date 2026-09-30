@@ -3,16 +3,20 @@ use std::{path::Path, str::FromStr, time::Duration};
 
 pub async fn connect(path: &str) -> Result<SqlitePool, sqlx::Error> {
     if let Some(parent) = Path::new(path).parent()
-        && !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent).map_err(sqlx::Error::Io)?;
-        }
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent).map_err(sqlx::Error::Io)?;
+    }
     let options = SqliteConnectOptions::new()
         .filename(path)
         .create_if_missing(true)
         .foreign_keys(true)
         .journal_mode(SqliteJournalMode::Wal)
         .busy_timeout(Duration::from_secs(5));
-    let pool = SqlitePoolOptions::new().max_connections(5).connect_with(options).await?;
+    let pool = SqlitePoolOptions::new()
+        .max_connections(5)
+        .connect_with(options)
+        .await?;
     migrate(&pool).await?;
     Ok(pool)
 }

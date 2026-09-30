@@ -31,14 +31,26 @@ pub struct Edition {
 const COLS: &str = "id, year, budget_eur, deadline, status, failure_reason, drawn_at, reminder_sent_at, announced_at, imported, created_at";
 
 pub async fn by_year(pool: &SqlitePool, year: i64) -> Result<Option<Edition>, sqlx::Error> {
-    sqlx::query_as(&format!("SELECT {COLS} FROM editions WHERE year = ?")).bind(year).fetch_optional(pool).await
+    sqlx::query_as(&format!("SELECT {COLS} FROM editions WHERE year = ?"))
+        .bind(year)
+        .fetch_optional(pool)
+        .await
 }
 
 pub async fn by_id(pool: &SqlitePool, id: i64) -> Result<Option<Edition>, sqlx::Error> {
-    sqlx::query_as(&format!("SELECT {COLS} FROM editions WHERE id = ?")).bind(id).fetch_optional(pool).await
+    sqlx::query_as(&format!("SELECT {COLS} FROM editions WHERE id = ?"))
+        .bind(id)
+        .fetch_optional(pool)
+        .await
 }
 
-pub async fn create_open(pool: &SqlitePool, year: i64, budget_eur: i64, deadline: DateTime<Utc>, now: DateTime<Utc>) -> Result<Edition, sqlx::Error> {
+pub async fn create_open(
+    pool: &SqlitePool,
+    year: i64,
+    budget_eur: i64,
+    deadline: DateTime<Utc>,
+    now: DateTime<Utc>,
+) -> Result<Edition, sqlx::Error> {
     sqlx::query_as(&format!(
         "INSERT INTO editions (year, budget_eur, deadline, status, created_at) VALUES (?, ?, ?, 'open', ?) RETURNING {COLS}"
     ))
@@ -60,7 +72,11 @@ pub async fn update_budget(pool: &SqlitePool, id: i64, budget_eur: i64) -> Resul
 }
 
 /// Une nouvelle deadline rouvre une édition dont le tirage a échoué.
-pub async fn update_deadline(pool: &SqlitePool, id: i64, deadline: DateTime<Utc>) -> Result<(), sqlx::Error> {
+pub async fn update_deadline(
+    pool: &SqlitePool,
+    id: i64,
+    deadline: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE editions SET deadline = ?,
              status = CASE WHEN status = 'failed' THEN 'open' ELSE status END,
@@ -74,23 +90,41 @@ pub async fn update_deadline(pool: &SqlitePool, id: i64, deadline: DateTime<Utc>
     Ok(())
 }
 
-pub async fn mark_announced(pool: &SqlitePool, id: i64, now: DateTime<Utc>) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE editions SET announced_at = ? WHERE id = ?").bind(now).bind(id).execute(pool).await?;
-    Ok(())
-}
-
-/// `true` si c'est cet appel qui a posé la marque (relance à envoyer).
-pub async fn mark_reminder_sent(pool: &SqlitePool, id: i64, now: DateTime<Utc>) -> Result<bool, sqlx::Error> {
-    let done = sqlx::query("UPDATE editions SET reminder_sent_at = ? WHERE id = ? AND reminder_sent_at IS NULL")
+pub async fn mark_announced(
+    pool: &SqlitePool,
+    id: i64,
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE editions SET announced_at = ? WHERE id = ?")
         .bind(now)
         .bind(id)
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+/// `true` si c'est cet appel qui a posé la marque (relance à envoyer).
+pub async fn mark_reminder_sent(
+    pool: &SqlitePool,
+    id: i64,
+    now: DateTime<Utc>,
+) -> Result<bool, sqlx::Error> {
+    let done = sqlx::query(
+        "UPDATE editions SET reminder_sent_at = ? WHERE id = ? AND reminder_sent_at IS NULL",
+    )
+    .bind(now)
+    .bind(id)
+    .execute(pool)
+    .await?;
     Ok(done.rows_affected() == 1)
 }
 
 pub async fn open_editions(pool: &SqlitePool) -> Result<Vec<Edition>, sqlx::Error> {
-    sqlx::query_as(&format!("SELECT {COLS} FROM editions WHERE status = 'open'")).fetch_all(pool).await
+    sqlx::query_as(&format!(
+        "SELECT {COLS} FROM editions WHERE status = 'open'"
+    ))
+    .fetch_all(pool)
+    .await
 }
 
 /// `None` efface la réponse (retour à « pas répondu »).
@@ -134,7 +168,13 @@ pub async fn set_registration(
 /// Réponse d'un joueur, écrite seulement si l'édition est encore ouverte et
 /// sa deadline pas passée — vérifié dans la même instruction que l'écriture,
 /// pour qu'un tirage concurrent ne la laisse pas passer. `false` : close.
-pub async fn register_while_open(pool: &SqlitePool, edition_id: i64, player_id: i64, participating: bool, now: DateTime<Utc>) -> Result<bool, sqlx::Error> {
+pub async fn register_while_open(
+    pool: &SqlitePool,
+    edition_id: i64,
+    player_id: i64,
+    participating: bool,
+    now: DateTime<Utc>,
+) -> Result<bool, sqlx::Error> {
     let done = sqlx::query(
         "INSERT INTO registrations (edition_id, player_id, participating, answered_by_admin, updated_at)
          SELECT ?, ?, ?, 0, ?
@@ -155,15 +195,24 @@ pub async fn register_while_open(pool: &SqlitePool, edition_id: i64, player_id: 
     Ok(done.rows_affected() == 1)
 }
 
-pub async fn registration_of(pool: &SqlitePool, edition_id: i64, player_id: i64) -> Result<Option<bool>, sqlx::Error> {
-    sqlx::query_scalar("SELECT participating FROM registrations WHERE edition_id = ? AND player_id = ?")
-        .bind(edition_id)
-        .bind(player_id)
-        .fetch_optional(pool)
-        .await
+pub async fn registration_of(
+    pool: &SqlitePool,
+    edition_id: i64,
+    player_id: i64,
+) -> Result<Option<bool>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT participating FROM registrations WHERE edition_id = ? AND player_id = ?",
+    )
+    .bind(edition_id)
+    .bind(player_id)
+    .fetch_optional(pool)
+    .await
 }
 
-pub async fn participants(pool: &SqlitePool, edition_id: i64) -> Result<Vec<PlayerRef>, sqlx::Error> {
+pub async fn participants(
+    pool: &SqlitePool,
+    edition_id: i64,
+) -> Result<Vec<PlayerRef>, sqlx::Error> {
     sqlx::query_as(
         "SELECT p.id AS player_id, p.pseudo FROM registrations r JOIN players p ON p.id = r.player_id
          WHERE r.edition_id = ? AND r.participating = 1 ORDER BY lower(p.pseudo)",
@@ -174,7 +223,10 @@ pub async fn participants(pool: &SqlitePool, edition_id: i64) -> Result<Vec<Play
 }
 
 /// joueur → (participe, répondu par l'admin)
-pub async fn registrations(pool: &SqlitePool, edition_id: i64) -> Result<HashMap<i64, (bool, bool)>, sqlx::Error> {
+pub async fn registrations(
+    pool: &SqlitePool,
+    edition_id: i64,
+) -> Result<HashMap<i64, (bool, bool)>, sqlx::Error> {
     let rows: Vec<(i64, bool, bool)> =
         sqlx::query_as("SELECT player_id, participating, answered_by_admin FROM registrations WHERE edition_id = ?")
             .bind(edition_id)
@@ -183,7 +235,10 @@ pub async fn registrations(pool: &SqlitePool, edition_id: i64) -> Result<HashMap
     Ok(rows.into_iter().map(|(id, p, a)| (id, (p, a))).collect())
 }
 
-pub async fn non_respondents_with_access(pool: &SqlitePool, edition_id: i64) -> Result<Vec<Player>, sqlx::Error> {
+pub async fn non_respondents_with_access(
+    pool: &SqlitePool,
+    edition_id: i64,
+) -> Result<Vec<Player>, sqlx::Error> {
     sqlx::query_as(
         "SELECT id, email, sso_user_id, pseudo, has_access FROM players p
          WHERE has_access = 1
