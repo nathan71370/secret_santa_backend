@@ -209,3 +209,22 @@ async fn corps_json_invalide_renvoie_une_erreur_json() {
     let (status, body) = app.post("/api/admin/editions", &admin, json!({ "budgetEur": 30 })).await;
     assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("INVALID_BODY")));
 }
+
+#[tokio::test]
+async fn deadline_apres_le_31_decembre_refusee() {
+    let app = TestApp::new().await;
+    let admin = app.login(1, "Nathan", true);
+    let (status, body) = app.post("/api/admin/editions", &admin, json!({ "budgetEur": 30, "deadline": "2027-01-03T12:00:00Z" })).await;
+    assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("INVALID_DEADLINE")));
+    assert_eq!(body["message"], "La deadline doit tomber avant le 1er janvier.");
+
+    // 31 décembre 23h30 à Paris : encore l'année de l'édition.
+    open_edition(&app, &admin).await;
+    let (status, body) = app.patch("/api/admin/editions/current", &admin, json!({ "deadline": "2026-12-31T22:30:00Z" })).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // 1er janvier 0h00 à Paris (23h00 UTC) : déjà trop tard.
+    let (status, body) = app.patch("/api/admin/editions/current", &admin, json!({ "deadline": "2026-12-31T23:00:00Z" })).await;
+    assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("INVALID_DEADLINE")));
+    let (status, body) = app.patch("/api/admin/editions/current", &admin, json!({ "deadline": "2027-01-03T12:00:00Z" })).await;
+    assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("INVALID_DEADLINE")));
+}

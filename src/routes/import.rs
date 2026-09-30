@@ -32,8 +32,9 @@ pub async fn import(State(state): State<AppState>, _admin: AdminUser, mut mp: Mu
     let current = state.current_year();
     let year: i64 = year
         .and_then(|y| y.trim().parse().ok())
-        .filter(|y| (2000..=current).contains(y))
-        .ok_or_else(|| ApiError::bad_request("INVALID_YEAR", format!("L'année doit être comprise entre 2000 et {current}.")))?;
+        // L'année en cours se crée par le formulaire d'édition, pas par import.
+        .filter(|y| (2000..current).contains(y))
+        .ok_or_else(|| ApiError::bad_request("INVALID_YEAR", format!("L'année doit être comprise entre 2000 et {}.", current - 1)))?;
     let budget: i64 = match budget.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
         None => 30,
         Some(b) => b.parse().ok().filter(|b| (1..=1000).contains(b)).ok_or_else(|| ApiError::bad_request("INVALID_BUDGET", "Le budget doit être compris entre 1 et 1000 €."))?,

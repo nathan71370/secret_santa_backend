@@ -23,7 +23,8 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
+use chrono_tz::Europe::Paris;
 use serde::{Deserialize, Serialize};
 
 fn auth_error(e: AuthError) -> ApiError {
@@ -44,12 +45,21 @@ fn validate_budget(budget: i64) -> ApiResult<()> {
     }
 }
 
+/// Future, et avant le 1er janvier suivant (minuit à Paris) : une édition
+/// appartient à son année civile.
 fn validate_deadline(state: &AppState, deadline: DateTime<Utc>) -> ApiResult<()> {
-    if deadline > state.now() {
-        Ok(())
-    } else {
-        Err(ApiError::bad_request("INVALID_DEADLINE", "La deadline doit être dans le futur."))
+    if deadline <= state.now() {
+        return Err(ApiError::bad_request("INVALID_DEADLINE", "La deadline doit être dans le futur."));
     }
+    let next_year = i32::try_from(state.current_year() + 1).map_err(|e| ApiError::Internal(e.to_string()))?;
+    let year_end = Paris
+        .with_ymd_and_hms(next_year, 1, 1, 0, 0, 0)
+        .single()
+        .ok_or_else(|| ApiError::Internal("1er janvier introuvable à Paris".into()))?;
+    if deadline >= year_end {
+        return Err(ApiError::bad_request("INVALID_DEADLINE", "La deadline doit tomber avant le 1er janvier."));
+    }
+    Ok(())
 }
 
 /// Rafraîchit l'instantané des comptes ayant accès à l'app, au nom de l'admin.

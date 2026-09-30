@@ -83,3 +83,12 @@ async fn reserve_a_l_admin() {
     let (status, _) = app.multipart(Method::POST, "/api/admin/import", &pote, vec![("year", text("2025")), ("file", file(LAST_YEAR))]).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn l_annee_en_cours_ne_s_importe_pas() {
+    let app = TestApp::new().await;
+    let admin = app.login(1, "Nathan", true);
+    let (status, body) = app.multipart(Method::POST, "/api/admin/import", &admin, vec![("year", text("2026")), ("file", file(LAST_YEAR))]).await;
+    assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("INVALID_YEAR")));
+    assert_eq!(body["message"], "L'année doit être comprise entre 2000 et 2025.");
+}
