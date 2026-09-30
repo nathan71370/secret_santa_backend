@@ -48,6 +48,8 @@ cargo clippy --all-targets -- -D warnings
 | `APP_ENV` | non | `production` | `development` : mails journalisés, `AUTH_DEV_USER` permis |
 | `AUTH_DEV_USER` | non | — | Dev uniquement |
 | `RUST_LOG` | non | `info` | |
+| `TZ` | non | `Europe/Paris` (compose) | Horodatage des logs seulement : les dates des mails sont toujours affichées à l'heure de Paris |
+| `SANTA_HOST` | non | `santa.limperiam.com` | `compose.yaml` uniquement : hôte de la règle Traefik (pas lu par le binaire) |
 
 ## Mise en service
 
