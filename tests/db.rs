@@ -41,3 +41,15 @@ fn horloge_manuelle_et_annee_de_paris() {
     clock.set(Utc.with_ymd_and_hms(2025, 6, 1, 0, 0, 0).unwrap());
     assert_eq!(paris_year(clock.now()), 2025);
 }
+
+#[tokio::test]
+async fn les_migrations_gardent_l_index_des_envois_et_acceptent_sending() {
+    let pool = db::connect_in_memory().await.unwrap();
+    let index: Option<String> = sqlx::query_scalar("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_assignments_pending'")
+        .fetch_optional(&pool)
+        .await
+        .unwrap();
+    assert!(index.is_some());
+    let sql: String = sqlx::query_scalar("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'assignments'").fetch_one(&pool).await.unwrap();
+    assert!(sql.contains("'sending'"), "{sql}");
+}

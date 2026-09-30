@@ -19,7 +19,9 @@ pub enum DrawOutcome {
 /// ordre de la transaction et ne réussit qu'une fois.
 pub async fn run_draw(state: &AppState, edition_id: i64) -> ApiResult<DrawOutcome> {
     let now = state.now();
-    let mut tx = state.pool.begin().await?;
+    // Verrou d'écriture pris dès l'ouverture : deux tirages concurrents
+    // s'attendent (busy_timeout) au lieu de s'invalider en cours de route.
+    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
 
     let claimed = sqlx::query(
         "UPDATE editions SET status = 'drawn', drawn_at = ?, failure_reason = NULL WHERE id = ? AND status IN ('open', 'failed')",
@@ -76,7 +78,7 @@ pub async fn run_draw(state: &AppState, edition_id: i64) -> ApiResult<DrawOutcom
 /// Dernier recours : efface les paires et rouvre les inscriptions. Les mails
 /// déjà partis ne sont pas rattrapés.
 pub async fn cancel_draw(state: &AppState, edition_id: i64, new_deadline: DateTime<Utc>) -> ApiResult<bool> {
-    let mut tx = state.pool.begin().await?;
+    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
     let reopened = sqlx::query(
         "UPDATE editions SET status = 'open', drawn_at = NULL, deadline = ?, reminder_sent_at = NULL WHERE id = ? AND status = 'drawn'",
     )
@@ -95,8 +97,12 @@ pub async fn cancel_draw(state: &AppState, edition_id: i64, new_deadline: DateTi
     Ok(true)
 }
 
-/// Au démarrage : un arrêt pendant une vague d'envois laisse des `pending`.
+/// Au démarrage : un arrêt pendant une vague d'envois laisse des `pending`,
+/// et des `sending` si l'arrêt a coupé un envoi — ceux-là repartent aussi.
 pub async fn resume_pending_mails(state: &AppState) {
+    if let Err(e) = assignments::reset_sending(&state.pool).await {
+        tracing::error!(error = %e, "remise en attente des envois interrompus impossible");
+    }
     match assignments::editions_with_pending(&state.pool).await {
         Ok(ids) => {
             for id in ids {

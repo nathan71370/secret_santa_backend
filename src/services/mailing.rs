@@ -55,7 +55,9 @@ pub async fn send_results(state: AppState, edition_id: i64) {
     }
 }
 
-/// Envoie (ou renvoie) le résultat d'un donneur et enregistre le statut.
+/// Envoie le résultat d'un donneur en attente (`pending`) et enregistre le
+/// statut. La ligne est d'abord réclamée (`sending`) : si un autre envoi l'a
+/// déjà prise, celui-ci ne fait rien — jamais deux mails pour un résultat.
 pub async fn send_result(state: &AppState, edition: &Edition, giver_id: i64) -> Result<(), ApiError> {
     let giver = players::find(&state.pool, giver_id).await?.ok_or_else(|| ApiError::not_found("Joueur inconnu."))?;
     let target = assignments::target_of(&state.pool, edition.id, giver_id)
@@ -70,6 +72,9 @@ pub async fn send_result(state: &AppState, edition: &Edition, giver_id: i64) -> 
         edition.budget_eur,
         &state.config.public_origin,
     );
+    if !assignments::claim_for_sending(&state.pool, edition.id, giver_id).await? {
+        return Ok(());
+    }
     match state.mailer.send(&mail).await {
         Ok(()) => assignments::set_mail_status(&state.pool, edition.id, giver_id, MailStatus::Sent, None).await?,
         Err(e) => {

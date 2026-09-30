@@ -3,7 +3,13 @@ mod common;
 use axum::http::StatusCode;
 use chrono::Duration;
 use common::TestApp;
-use secret_santa::{clock::Clock, services::draw_service::{self, DrawOutcome}};
+use secret_santa::{
+    clock::Clock,
+    services::{
+        draw_service::{self, DrawOutcome},
+        mailing,
+    },
+};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 
@@ -214,4 +220,94 @@ async fn routes_de_tirage_reservees_a_l_admin() {
     assert_eq!(status, StatusCode::FORBIDDEN);
     let (status, _) = g.app.get("/api/admin/editions/current/mails", &g.tokens[0].1).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn cinq_tirages_simultanes_sur_une_base_fichier_un_seul_passe() {
+    let app = TestApp::with_file_db().await;
+    let admin = app.login(1, "Nathan", true);
+    let deadline = (app.clock.now() + Duration::days(20)).to_rfc3339();
+    let (status, _) = app.post("/api/admin/editions", &admin, json!({ "budgetEur": 30, "deadline": deadline })).await;
+    assert_eq!(status, StatusCode::CREATED);
+    for (i, p) in ["Alice", "Bob", "Chloe", "Dan", "Emma"].iter().enumerate() {
+        let t = app.login(10 + i as i64, p, false);
+        let (status, _) = app.put("/api/editions/current/registration", &t, json!({ "participating": true })).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+    app.settle().await;
+    let id = edition_id(&app).await;
+
+    let runs = (0..5).map(|_| {
+        let state = app.state.clone();
+        tokio::spawn(async move { draw_service::run_draw(&state, id).await })
+    });
+    let mut outcomes = Vec::new();
+    for run in runs.collect::<Vec<_>>() {
+        outcomes.push(run.await.unwrap().expect("aucun tirage ne doit échouer sur un verrou"));
+    }
+    assert_eq!(outcomes.iter().filter(|o| **o == DrawOutcome::Drawn).count(), 1, "{outcomes:?}");
+    assert_eq!(outcomes.iter().filter(|o| **o == DrawOutcome::AlreadyDone).count(), 4, "{outcomes:?}");
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM assignments WHERE edition_id = ?").bind(id).fetch_one(&app.state.pool).await.unwrap();
+    assert_eq!(count, 5);
+    app.settle().await;
+}
+
+#[tokio::test]
+async fn renvoi_d_un_mail_deja_parti_un_seul_nouveau_mail() {
+    let g = game(&["Alice", "Bob", "Chloe"]).await;
+    g.app.post("/api/admin/editions/current/draw", &g.admin, json!({})).await;
+    g.app.settle().await;
+    g.app.mailer.sent.lock().unwrap().clear();
+
+    let alice = g.app.player_id("Alice").await;
+    let (status, body) = g.app.post(&format!("/api/admin/editions/current/mails/{alice}/resend"), &g.admin, json!({})).await;
+    assert_eq!((status, body["mailStatus"].as_str()), (StatusCode::ACCEPTED, Some("pending")));
+    g.app.settle().await;
+    assert_eq!(g.app.mails_to("alice@x.fr").len(), 1);
+    assert_eq!(g.app.mailer.sent.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn deux_envois_simultanes_du_meme_resultat_un_seul_mail() {
+    let g = game(&["Alice", "Bob", "Chloe"]).await;
+    g.app.post("/api/admin/editions/current/draw", &g.admin, json!({})).await;
+    g.app.settle().await;
+    g.app.mailer.sent.lock().unwrap().clear();
+
+    let id = edition_id(&g.app).await;
+    let alice = g.app.player_id("Alice").await;
+    sqlx::query("UPDATE assignments SET mail_status = 'pending' WHERE edition_id = ? AND giver_id = ?")
+        .bind(id)
+        .bind(alice)
+        .execute(&g.app.state.pool)
+        .await
+        .unwrap();
+    let edition = secret_santa::repo::editions::by_id(&g.app.state.pool, id).await.unwrap().unwrap();
+    let (a, b) = tokio::join!(
+        mailing::send_result(&g.app.state, &edition, alice),
+        mailing::send_result(&g.app.state, &edition, alice)
+    );
+    a.unwrap();
+    b.unwrap();
+    assert_eq!(g.app.mails_to("alice@x.fr").len(), 1);
+    let status: String = sqlx::query_scalar("SELECT mail_status FROM assignments WHERE edition_id = ? AND giver_id = ?")
+        .bind(id)
+        .bind(alice)
+        .fetch_one(&g.app.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "sent");
+}
+
+#[tokio::test]
+async fn un_envoi_interrompu_repart_au_demarrage() {
+    let g = game(&["Alice", "Bob", "Chloe"]).await;
+    g.app.post("/api/admin/editions/current/draw", &g.admin, json!({})).await;
+    g.app.settle().await;
+    sqlx::query("UPDATE assignments SET mail_status = 'sending'").execute(&g.app.state.pool).await.unwrap();
+    g.app.mailer.sent.lock().unwrap().clear();
+
+    draw_service::resume_pending_mails(&g.app.state).await;
+    g.app.settle().await;
+    assert_eq!(g.app.mailer.sent.lock().unwrap().len(), 3);
 }

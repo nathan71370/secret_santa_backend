@@ -98,7 +98,19 @@ pub struct TestApp {
 impl TestApp {
     /// Horloge figée au 1er novembre 2026, midi UTC.
     pub async fn new() -> Self {
+        Self::with_pool(tempfile::tempdir().unwrap(), db::connect_in_memory().await.unwrap())
+    }
+
+    /// Comme `new`, mais sur une vraie base fichier (WAL, 5 connexions) :
+    /// pour les tests de concurrence entre connexions.
+    pub async fn with_file_db() -> Self {
         let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("santa.db");
+        let pool = db::connect(path.to_str().unwrap()).await.unwrap();
+        Self::with_pool(tmp, pool)
+    }
+
+    fn with_pool(tmp: tempfile::TempDir, pool: sqlx::SqlitePool) -> Self {
         let config = Config {
             bind_addr: "127.0.0.1:0".into(),
             database_path: ":memory:".into(),
@@ -116,7 +128,7 @@ impl TestApp {
         let mailer = Arc::new(RecordingMailer::default());
         let clock = Arc::new(ManualClock::new(Utc.with_ymd_and_hms(2026, 11, 1, 12, 0, 0).unwrap()));
         let state = AppState {
-            pool: db::connect_in_memory().await.unwrap(),
+            pool,
             config: Arc::new(config),
             auth: auth.clone(),
             mailer: mailer.clone(),

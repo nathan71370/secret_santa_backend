@@ -8,6 +8,8 @@ use std::collections::HashMap;
 #[serde(rename_all = "lowercase")]
 pub enum MailStatus {
     Pending,
+    /// Réclamé par un envoi en cours.
+    Sending,
     Sent,
     Failed,
     /// Édition importée : aucun mail n'est jamais parti.
@@ -86,6 +88,23 @@ pub async fn set_mail_status(pool: &SqlitePool, edition_id: i64, giver: i64, sta
         .execute(pool)
         .await?;
     Ok(done.rows_affected() == 1)
+}
+
+/// Réclame l'envoi (`pending → sending`). `false` : quelqu'un d'autre l'a déjà
+/// réclamé, ou il n'y a rien à envoyer.
+pub async fn claim_for_sending(pool: &SqlitePool, edition_id: i64, giver: i64) -> Result<bool, sqlx::Error> {
+    let done = sqlx::query("UPDATE assignments SET mail_status = 'sending' WHERE edition_id = ? AND giver_id = ? AND mail_status = 'pending'")
+        .bind(edition_id)
+        .bind(giver)
+        .execute(pool)
+        .await?;
+    Ok(done.rows_affected() == 1)
+}
+
+/// Au démarrage : un envoi coupé par un arrêt redevient `pending`.
+pub async fn reset_sending(pool: &SqlitePool) -> Result<u64, sqlx::Error> {
+    let done = sqlx::query("UPDATE assignments SET mail_status = 'pending' WHERE mail_status = 'sending'").execute(pool).await?;
+    Ok(done.rows_affected())
 }
 
 pub async fn editions_with_pending(pool: &SqlitePool) -> Result<Vec<i64>, sqlx::Error> {
