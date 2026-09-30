@@ -84,11 +84,10 @@ fn unavailable(e: impl std::fmt::Display) -> AuthError {
 impl AuthClient for HttpAuthClient {
     async fn session(&self, token: &str) -> Result<Option<SsoSession>, AuthError> {
         let key = Self::cache_key(token);
-        if let Some((at, session)) = self.cache.lock().unwrap().get(&key) {
-            if at.elapsed() < self.ttl {
+        if let Some((at, session)) = self.cache.lock().unwrap().get(&key)
+            && at.elapsed() < self.ttl {
                 return Ok(Some(session.clone()));
             }
-        }
 
         let res = self
             .http

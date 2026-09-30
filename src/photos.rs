@@ -62,11 +62,10 @@ pub async fn store(dir: &Path, jpeg: &[u8]) -> std::io::Result<String> {
 }
 
 pub async fn remove(dir: &Path, name: &str) {
-    if is_valid_name(name) {
-        if let Err(e) = tokio::fs::remove_file(dir.join(name)).await {
+    if is_valid_name(name)
+        && let Err(e) = tokio::fs::remove_file(dir.join(name)).await {
             tracing::warn!(error = %e, "photo non supprimée");
         }
-    }
 }
 
 #[cfg(test)]

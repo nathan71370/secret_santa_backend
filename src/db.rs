@@ -2,11 +2,10 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePo
 use std::{path::Path, str::FromStr, time::Duration};
 
 pub async fn connect(path: &str) -> Result<SqlitePool, sqlx::Error> {
-    if let Some(parent) = Path::new(path).parent() {
-        if !parent.as_os_str().is_empty() {
+    if let Some(parent) = Path::new(path).parent()
+        && !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent).map_err(sqlx::Error::Io)?;
         }
-    }
     let options = SqliteConnectOptions::new()
         .filename(path)
         .create_if_missing(true)

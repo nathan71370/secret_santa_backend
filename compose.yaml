@@ -1,0 +1,58 @@
+services:
+  secret-santa-backend:
+    build: .
+    image: secret-santa-backend:latest
+    # Pas de container_name : Komodo nomme les conteneurs d'après le Stack.
+    restart: unless-stopped
+
+    networks:
+      - default
+      - traefik
+
+    # Pas de `ports:` : Traefik joint le conteneur par le réseau `traefik`.
+    # Même hôte que le frontend : seul `/api` arrive ici, d'où la priorité
+    # explicite, supérieure à celle du routeur du frontend.
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.secret-santa-backend.rule=Host(`${SANTA_HOST:-santa.limperiam.com}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.secret-santa-backend.entrypoints=websecure"
+      # tls=true sans certresolver : le résolveur par défaut est global à Traefik.
+      - "traefik.http.routers.secret-santa-backend.tls=true"
+      - "traefik.http.routers.secret-santa-backend.priority=100"
+      - "traefik.http.services.secret-santa-backend.loadbalancer.server.port=8080"
+
+    environment:
+      # Destinataire des mails d'échec du tirage automatique.
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?adresse de l'administrateur}
+      # Sans SMTP, aucun tirage n'arriverait à personne : refus de démarrer.
+      SMTP_HOST: ${SMTP_HOST:?hôte du serveur SMTP}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      # Doit être un expéditeur autorisé par le fournisseur SMTP.
+      SMTP_FROM: ${SMTP_FROM:?expéditeur, ex. Secret Santa <santa@limperiam.com>}
+      AUTH_URL: ${AUTH_URL:-http://limperiam-auth:3000}
+      AUTH_LOGIN_URL: ${AUTH_LOGIN_URL:-https://auth.limperiam.com/login}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://santa.limperiam.com}
+      TZ: ${TZ:-Europe/Paris}
+      RUST_LOG: ${RUST_LOG:-info}
+
+    volumes:
+      # Base SQLite + photos. Sans ce volume, tout disparaît au redéploiement.
+      - secret-santa-data:/data
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  default:
+  traefik:
+    external: true
+    name: traefik
+
+volumes:
+  secret-santa-data:

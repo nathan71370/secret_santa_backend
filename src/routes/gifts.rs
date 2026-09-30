@@ -113,11 +113,10 @@ pub async fn update(State(state): State<AppState>, user: CurrentUser, Path(id): 
     let gift = match gifts::update(&state.pool, id, year, &description, photo.as_deref()).await {
         Ok(gift) => gift,
         Err(e) => {
-            if let (true, Some(new)) = (replaced, &photo) {
-                if existing.photo_path.as_ref() != Some(new) {
+            if let (true, Some(new)) = (replaced, &photo)
+                && existing.photo_path.as_ref() != Some(new) {
                     photos::remove(&state.config.uploads_dir, new).await;
                 }
-            }
             return Err(e.into());
         }
     };
