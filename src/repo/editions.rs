@@ -131,6 +131,30 @@ pub async fn set_registration(
     Ok(())
 }
 
+/// Réponse d'un joueur, écrite seulement si l'édition est encore ouverte et
+/// sa deadline pas passée — vérifié dans la même instruction que l'écriture,
+/// pour qu'un tirage concurrent ne la laisse pas passer. `false` : close.
+pub async fn register_while_open(pool: &SqlitePool, edition_id: i64, player_id: i64, participating: bool, now: DateTime<Utc>) -> Result<bool, sqlx::Error> {
+    let done = sqlx::query(
+        "INSERT INTO registrations (edition_id, player_id, participating, answered_by_admin, updated_at)
+         SELECT ?, ?, ?, 0, ?
+         WHERE EXISTS (SELECT 1 FROM editions WHERE id = ? AND status = 'open' AND julianday(deadline) > julianday(?))
+         ON CONFLICT (edition_id, player_id) DO UPDATE SET
+             participating = excluded.participating,
+             answered_by_admin = 0,
+             updated_at = excluded.updated_at",
+    )
+    .bind(edition_id)
+    .bind(player_id)
+    .bind(participating)
+    .bind(now)
+    .bind(edition_id)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
 pub async fn registration_of(pool: &SqlitePool, edition_id: i64, player_id: i64) -> Result<Option<bool>, sqlx::Error> {
     sqlx::query_scalar("SELECT participating FROM registrations WHERE edition_id = ? AND player_id = ?")
         .bind(edition_id)

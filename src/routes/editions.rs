@@ -66,10 +66,9 @@ pub async fn put_registration(
     ApiJson(body): ApiJson<RegistrationBody>,
 ) -> ApiResult<Json<EditionView>> {
     let e = require_current(&state).await?;
-    if e.status != EditionStatus::Open || state.now() >= e.deadline {
+    if !editions::register_while_open(&state.pool, e.id, user.player_id, body.participating, state.now()).await? {
         return Err(ApiError::conflict("REGISTRATION_CLOSED", "Les inscriptions sont closes."));
     }
-    editions::set_registration(&state.pool, e.id, user.player_id, Some(body.participating), false, state.now()).await?;
     Ok(Json(edition_view(&state, &e, &user).await?))
 }
 

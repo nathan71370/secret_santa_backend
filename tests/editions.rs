@@ -228,3 +228,17 @@ async fn deadline_apres_le_31_decembre_refusee() {
     let (status, body) = app.patch("/api/admin/editions/current", &admin, json!({ "deadline": "2027-01-03T12:00:00Z" })).await;
     assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("INVALID_DEADLINE")));
 }
+
+#[tokio::test]
+async fn inscription_refusee_des_que_l_edition_n_est_plus_ouverte() {
+    let app = TestApp::new().await;
+    let admin = app.login(1, "Nathan", true);
+    let bob = app.login(2, "Bob", false);
+    open_edition(&app, &admin).await;
+    // Le tirage vient de passer, deadline encore future : l'écriture doit échouer.
+    sqlx::query("UPDATE editions SET status = 'drawn'").execute(&app.state.pool).await.unwrap();
+    let (status, body) = app.put("/api/editions/current/registration", &bob, json!({ "participating": true })).await;
+    assert_eq!((status, body["error"].as_str()), (StatusCode::CONFLICT, Some("REGISTRATION_CLOSED")));
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM registrations").fetch_one(&app.state.pool).await.unwrap();
+    assert_eq!(count, 0);
+}
