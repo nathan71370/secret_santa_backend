@@ -7,7 +7,9 @@ use std::{io::Cursor, path::Path};
 
 pub const MAX_BYTES: usize = 5 * 1024 * 1024;
 pub const MAX_SIDE: u32 = 1600;
-const MAX_DECODE_SIDE: u32 = 10_000;
+const MAX_DECODE_SIDE: u32 = 8_000;
+const MAX_DECODE_PIXELS: u64 = 40_000_000;
+const MAX_DECODE_ALLOC: u64 = 128 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum PhotoError {
@@ -30,11 +32,16 @@ pub fn normalize(bytes: &[u8]) -> Result<Vec<u8>, PhotoError> {
     let mut decoder = ImageReader::with_format(Cursor::new(bytes), format)
         .into_decoder()
         .map_err(|_| PhotoError::Unreadable)?;
-    // Garde-fou contre les images « bombes » : petites en octets, énormes une fois décodées.
+    // Garde-fou contre les images « bombes » : petites en octets, énormes une
+    // fois décodées. La surface déclarée est vérifiée avant tout décodage.
+    let (width, height) = decoder.dimensions();
+    if u64::from(width) * u64::from(height) > MAX_DECODE_PIXELS {
+        return Err(PhotoError::TooLarge);
+    }
     let mut limits = Limits::default();
     limits.max_image_width = Some(MAX_DECODE_SIDE);
     limits.max_image_height = Some(MAX_DECODE_SIDE);
-    limits.max_alloc = Some(256 * 1024 * 1024);
+    limits.max_alloc = Some(MAX_DECODE_ALLOC);
     decoder.set_limits(limits).map_err(|_| PhotoError::Unreadable)?;
     let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
     let mut img = DynamicImage::from_decoder(decoder).map_err(|_| PhotoError::Unreadable)?;
@@ -82,6 +89,18 @@ mod tests {
         out.into_inner()
     }
 
+    /// CRC des blocs PNG, pour garder un en-tête IHDR valide après retouche.
+    fn crc32(data: &[u8]) -> u32 {
+        let mut crc = 0xFFFF_FFFFu32;
+        for &b in data {
+            crc ^= u32::from(b);
+            for _ in 0..8 {
+                crc = if crc & 1 == 1 { (crc >> 1) ^ 0xEDB8_8320 } else { crc >> 1 };
+            }
+        }
+        !crc
+    }
+
     #[test]
     fn reduit_et_reencode_en_jpeg() {
         let jpeg = normalize(&png(3200, 1000)).unwrap();
@@ -122,6 +141,17 @@ mod tests {
         bytes[16..20].copy_from_slice(&20_000u32.to_be_bytes());
         bytes[20..24].copy_from_slice(&20_000u32.to_be_bytes());
         assert!(normalize(&bytes).is_err());
+    }
+
+    #[test]
+    fn refuse_plus_de_40_megapixels_avant_decodage() {
+        // 7000 × 7000 = 49 Mpx : chaque côté passe, la surface non.
+        let mut bytes = png(8, 8);
+        bytes[16..20].copy_from_slice(&7_000u32.to_be_bytes());
+        bytes[20..24].copy_from_slice(&7_000u32.to_be_bytes());
+        let crc = crc32(&bytes[12..29]);
+        bytes[29..33].copy_from_slice(&crc.to_be_bytes());
+        assert_eq!(normalize(&bytes), Err(PhotoError::TooLarge));
     }
 
     #[test]
