@@ -4,6 +4,8 @@ services:
     image: secret-santa-backend:latest
     # Pas de container_name : Komodo nomme les conteneurs d'après le Stack.
     restart: unless-stopped
+    # main.rs laisse 30 s aux envois de mails en cours avant de sortir.
+    stop_grace_period: 45s
 
     networks:
       - default
