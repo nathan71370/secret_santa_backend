@@ -111,6 +111,7 @@ async fn une_adresse_liee_a_un_autre_compte_sso_est_refusee() {
             pseudo: "Intrus".into(),
             is_admin: false,
             apps: vec!["santa".into()],
+            avatar_path: None,
         },
     );
     let (status, _) = app.get("/api/me", "tok-2").await;

@@ -77,9 +77,14 @@ pub async fn send_result(
     let giver = players::find(&state.pool, giver_id)
         .await?
         .ok_or_else(|| ApiError::not_found("Joueur inconnu."))?;
-    let target = assignments::target_of(&state.pool, edition.id, giver_id)
-        .await?
-        .ok_or_else(|| ApiError::not_found("Pas de tirage pour ce joueur."))?;
+    let target = assignments::target_of(
+        &state.pool,
+        edition.id,
+        giver_id,
+        &state.config.auth_public_url,
+    )
+    .await?
+    .ok_or_else(|| ApiError::not_found("Pas de tirage pour ce joueur."))?;
     let mail = templates::result(
         &giver.email,
         &giver.pseudo,

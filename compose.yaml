@@ -35,6 +35,8 @@ services:
       SMTP_FROM: ${SMTP_FROM:?expéditeur, ex. Secret Santa <santa@limperiam.com>}
       AUTH_URL: ${AUTH_URL:-http://limperiam-auth:3000}
       AUTH_LOGIN_URL: ${AUTH_LOGIN_URL:-https://auth.limperiam.com/login}
+      # Origine publique du SSO : préfixe des photos de profil, chargées par le navigateur.
+      AUTH_PUBLIC_URL: ${AUTH_PUBLIC_URL:-https://auth.limperiam.com}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://santa.limperiam.com}
       TZ: ${TZ:-Europe/Paris}
       RUST_LOG: ${RUST_LOG:-info}

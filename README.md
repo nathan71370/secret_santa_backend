@@ -40,6 +40,7 @@ cargo clippy --all-targets -- -D warnings
 | `SMTP_USER` / `SMTP_PASS` | non | — | |
 | `AUTH_URL` | non | `http://limperiam-auth:3000` | SSO, par le réseau Docker |
 | `AUTH_LOGIN_URL` | non | `https://auth.limperiam.com/login` | Renvoyé au front sur 401 |
+| `AUTH_PUBLIC_URL` | non | `https://auth.limperiam.com` | Origine publique du SSO : préfixe des photos de profil (`avatarUrl`), chargées directement par le navigateur avec le cookie SSO |
 | `PUBLIC_ORIGIN` | non | `https://santa.limperiam.com` | Contrôle `Origin`, liens des mails |
 | `DATABASE_PATH` | non | `/data/santa.db` | |
 | `UPLOADS_DIR` | non | `/data/uploads` | Photos des cadeaux |

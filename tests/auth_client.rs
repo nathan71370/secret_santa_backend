@@ -27,6 +27,7 @@ async fn session_valide_relaie_le_cookie_et_est_mise_en_cache() {
         (7, "Alice", false)
     );
     assert_eq!(s.apps, ["santa", "dashboard"]);
+    assert_eq!(s.avatar_path, None);
     // Deuxième appel servi par le cache : `expect(1)` est vérifié à la fin du test.
     assert!(client.session("tok").await.unwrap().is_some());
 }
@@ -99,14 +100,25 @@ async fn list_users_filtre_par_app_et_relaie_le_cookie() {
         .and(query_param("app", "santa"))
         .and(header("cookie", "lim_session=admin"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "users": [
-            { "userId": 1, "email": "a@x.fr", "pseudo": "A" },
-            { "userId": 2, "email": "b@x.fr", "pseudo": "B" }
+            { "userId": 1, "email": "a@x.fr", "pseudo": "A", "avatarPath": "/avatars/1.jpg" },
+            { "userId": 2, "email": "b@x.fr", "pseudo": "B", "avatarPath": null },
+            { "userId": 3, "email": "c@x.fr", "pseudo": "C" }
         ] })))
         .mount(&server)
         .await;
     let client = HttpAuthClient::new(server.uri(), Duration::from_secs(60));
     let users = client.list_users("admin", "santa").await.unwrap();
-    assert_eq!(users.iter().map(|u| u.user_id).collect::<Vec<_>>(), [1, 2]);
+    assert_eq!(
+        users.iter().map(|u| u.user_id).collect::<Vec<_>>(),
+        [1, 2, 3]
+    );
+    assert_eq!(
+        users
+            .iter()
+            .map(|u| u.avatar_path.as_deref())
+            .collect::<Vec<_>>(),
+        [Some("/avatars/1.jpg"), None, None]
+    );
 }
 
 #[tokio::test]

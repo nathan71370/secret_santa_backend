@@ -8,6 +8,8 @@ pub struct CurrentUser {
     pub player_id: i64,
     pub email: String,
     pub pseudo: String,
+    /// URL absolue de la photo de profil, `None` sans photo.
+    pub avatar_url: Option<String>,
     pub is_admin: bool,
     /// Jeton du cookie SSO, relayé pour lire l'annuaire au nom de l'admin.
     pub token: String,
@@ -76,6 +78,7 @@ impl FromRequestParts<AppState> for CurrentUser {
             session.user_id,
             &session.email,
             &session.pseudo,
+            session.avatar_path.as_deref(),
             state.now(),
         )
         .await?
@@ -91,6 +94,10 @@ impl FromRequestParts<AppState> for CurrentUser {
             player_id,
             email: session.email.trim().to_lowercase(),
             pseudo: session.pseudo,
+            avatar_url: players::avatar_url(
+                &state.config.auth_public_url,
+                session.avatar_path.as_deref(),
+            ),
             is_admin: session.is_admin,
             token,
         })

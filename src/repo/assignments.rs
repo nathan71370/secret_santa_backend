@@ -1,4 +1,4 @@
-use super::players::PlayerRef;
+use super::players::{self, PlayerRef, REF_COLS};
 use serde::Serialize;
 use sqlx::{SqliteConnection, SqlitePool};
 use std::collections::HashMap;
@@ -64,15 +64,21 @@ pub async fn target_of(
     pool: &SqlitePool,
     edition_id: i64,
     giver: i64,
+    auth_public_url: &str,
 ) -> Result<Option<PlayerRef>, sqlx::Error> {
-    sqlx::query_as(
-        "SELECT p.id AS player_id, p.pseudo FROM assignments a JOIN players p ON p.id = a.receiver_id
+    let target: Option<PlayerRef> = sqlx::query_as(&format!(
+        "SELECT {REF_COLS} FROM assignments a JOIN players p ON p.id = a.receiver_id
          WHERE a.edition_id = ? AND a.giver_id = ?",
-    )
+    ))
     .bind(edition_id)
     .bind(giver)
     .fetch_optional(pool)
-    .await
+    .await?;
+    Ok(target.map(|t| {
+        players::resolve_avatars(vec![t], auth_public_url)
+            .pop()
+            .expect("un élément")
+    }))
 }
 
 pub async fn mail_statuses(

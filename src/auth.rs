@@ -23,6 +23,9 @@ pub struct SsoSession {
     pub is_admin: bool,
     #[serde(default)]
     pub apps: Vec<String>,
+    /// Photo de profil, relative à l'origine publique du SSO (`/avatars/3.jpg`).
+    #[serde(default)]
+    pub avatar_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -31,6 +34,8 @@ pub struct SsoUser {
     pub user_id: i64,
     pub email: String,
     pub pseudo: String,
+    #[serde(default)]
+    pub avatar_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -161,6 +166,7 @@ impl AuthClient for DevAuthClient {
             pseudo: self.user.pseudo.clone(),
             is_admin: self.user.is_admin,
             apps: vec![APP_SLUG.to_string()],
+            avatar_path: None,
         }))
     }
 
@@ -169,6 +175,7 @@ impl AuthClient for DevAuthClient {
             user_id: 1,
             email: self.user.email.clone(),
             pseudo: self.user.pseudo.clone(),
+            avatar_path: None,
         }])
     }
 }

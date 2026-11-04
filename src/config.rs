@@ -23,6 +23,8 @@ pub struct Config {
     pub uploads_dir: PathBuf,
     pub auth_url: String,
     pub auth_login_url: String,
+    /// Origine publique du SSO, qui sert les photos de profil au navigateur.
+    pub auth_public_url: String,
     pub public_origin: String,
     pub admin_email: String,
     /// `None` seulement en développement : les mails sont alors journalisés.
@@ -109,6 +111,7 @@ impl Config {
                 .into(),
             auth_url: url("AUTH_URL", "http://limperiam-auth:3000"),
             auth_login_url: url("AUTH_LOGIN_URL", "https://auth.limperiam.com/login"),
+            auth_public_url: url("AUTH_PUBLIC_URL", "https://auth.limperiam.com"),
             public_origin: url("PUBLIC_ORIGIN", "https://santa.limperiam.com"),
             admin_email,
             smtp,
@@ -164,6 +167,7 @@ mod tests {
         assert_eq!(c.uploads_dir, std::path::PathBuf::from("/data/uploads"));
         assert_eq!(c.auth_url, "http://limperiam-auth:3000");
         assert_eq!(c.auth_login_url, "https://auth.limperiam.com/login");
+        assert_eq!(c.auth_public_url, "https://auth.limperiam.com");
         assert_eq!(c.public_origin, "https://santa.limperiam.com");
         assert_eq!(c.admin_email, "nathan@x.fr");
         assert_eq!(c.mail_delay, std::time::Duration::from_millis(1000));
@@ -263,8 +267,10 @@ mod tests {
         let mut env = PROD.to_vec();
         env.push(("PUBLIC_ORIGIN", "http://localhost:5173/"));
         env.push(("AUTH_URL", "http://sso:3000/"));
+        env.push(("AUTH_PUBLIC_URL", "http://localhost:3000/"));
         let c = Config::from_lookup(lookup(&env)).unwrap();
         assert_eq!(c.public_origin, "http://localhost:5173");
         assert_eq!(c.auth_url, "http://sso:3000");
+        assert_eq!(c.auth_public_url, "http://localhost:3000");
     }
 }

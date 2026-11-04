@@ -42,7 +42,8 @@ pub async fn edition_view(
             None
         },
         drawn_at: e.drawn_at,
-        participants: editions::participants(&state.pool, e.id).await?,
+        participants: editions::participants(&state.pool, e.id, &state.config.auth_public_url)
+            .await?,
         my_registration: editions::registration_of(&state.pool, e.id, viewer.player_id).await?,
         imported: e.imported,
     })
@@ -105,6 +106,12 @@ pub async fn my_target(
     if e.status != EditionStatus::Drawn {
         return Err(not_found());
     }
-    let target = crate::repo::assignments::target_of(&state.pool, e.id, user.player_id).await?;
+    let target = crate::repo::assignments::target_of(
+        &state.pool,
+        e.id,
+        user.player_id,
+        &state.config.auth_public_url,
+    )
+    .await?;
     target.map(Json).ok_or_else(not_found)
 }

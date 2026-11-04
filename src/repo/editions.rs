@@ -1,4 +1,4 @@
-use super::players::{Player, PlayerRef};
+use super::players::{self, Player, PlayerRef, REF_COLS};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::SqlitePool;
@@ -212,14 +212,16 @@ pub async fn registration_of(
 pub async fn participants(
     pool: &SqlitePool,
     edition_id: i64,
+    auth_public_url: &str,
 ) -> Result<Vec<PlayerRef>, sqlx::Error> {
-    sqlx::query_as(
-        "SELECT p.id AS player_id, p.pseudo FROM registrations r JOIN players p ON p.id = r.player_id
+    let refs = sqlx::query_as(&format!(
+        "SELECT {REF_COLS} FROM registrations r JOIN players p ON p.id = r.player_id
          WHERE r.edition_id = ? AND r.participating = 1 ORDER BY lower(p.pseudo)",
-    )
+    ))
     .bind(edition_id)
     .fetch_all(pool)
-    .await
+    .await?;
+    Ok(players::resolve_avatars(refs, auth_public_url))
 }
 
 /// joueur → (participe, répondu par l'admin)
@@ -239,12 +241,13 @@ pub async fn non_respondents_with_access(
     pool: &SqlitePool,
     edition_id: i64,
 ) -> Result<Vec<Player>, sqlx::Error> {
-    sqlx::query_as(
-        "SELECT id, email, sso_user_id, pseudo, has_access FROM players p
+    sqlx::query_as(&format!(
+        "SELECT {} FROM players p
          WHERE has_access = 1
            AND NOT EXISTS (SELECT 1 FROM registrations r WHERE r.edition_id = ? AND r.player_id = p.id)
          ORDER BY lower(pseudo)",
-    )
+        players::COLS
+    ))
     .bind(edition_id)
     .fetch_all(pool)
     .await

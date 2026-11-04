@@ -69,7 +69,7 @@ fn validate_deadline(state: &AppState, deadline: DateTime<Utc>) -> ApiResult<()>
 }
 
 /// Rafraîchit l'instantané des comptes ayant accès à l'app, au nom de l'admin.
-async fn refresh_directory(state: &AppState, admin: &AdminUser) -> ApiResult<()> {
+pub(super) async fn refresh_directory(state: &AppState, admin: &AdminUser) -> ApiResult<()> {
     let users = state
         .auth
         .list_users(&admin.0.token, APP_SLUG)
@@ -84,6 +84,7 @@ async fn refresh_directory(state: &AppState, admin: &AdminUser) -> ApiResult<()>
 pub struct DirectoryEntry {
     pub player_id: i64,
     pub pseudo: String,
+    pub avatar_url: Option<String>,
     pub email: String,
     pub registration: Option<bool>,
     pub answered_by_admin: bool,
@@ -104,6 +105,7 @@ pub async fn sso_users(
         .map(|p| {
             let reg = regs.get(&p.id).copied();
             DirectoryEntry {
+                avatar_url: p.avatar_url(&state.config.auth_public_url),
                 player_id: p.id,
                 pseudo: p.pseudo,
                 email: p.email,

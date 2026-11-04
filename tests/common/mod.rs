@@ -38,6 +38,8 @@ pub struct FakeAuth {
     pub sessions: Mutex<HashMap<String, SsoSession>>,
     pub users: Mutex<Vec<SsoUser>>,
     pub down: AtomicBool,
+    /// Annuaire seul indisponible, les sessions répondent.
+    pub directory_down: AtomicBool,
 }
 
 #[async_trait]
@@ -50,7 +52,7 @@ impl AuthClient for FakeAuth {
     }
 
     async fn list_users(&self, token: &str, _app: &str) -> Result<Vec<SsoUser>, AuthError> {
-        if self.down.load(Ordering::SeqCst) {
+        if self.down.load(Ordering::SeqCst) || self.directory_down.load(Ordering::SeqCst) {
             return Err(AuthError::Unavailable("panne simulée".into()));
         }
         match self.sessions.lock().unwrap().get(token) {
@@ -124,6 +126,7 @@ impl TestApp {
             uploads_dir: tmp.path().join("uploads"),
             auth_url: "http://sso.test".into(),
             auth_login_url: "https://auth.test/login".into(),
+            auth_public_url: "https://auth.test".into(),
             public_origin: ORIGIN.into(),
             admin_email: "admin@x.fr".into(),
             smtp: None,
@@ -167,6 +170,7 @@ impl TestApp {
                 user_id: sso_id,
                 email: Self::email_of(pseudo),
                 pseudo: pseudo.into(),
+                avatar_path: None,
             });
         }
     }
@@ -191,6 +195,7 @@ impl TestApp {
                 pseudo: pseudo.into(),
                 is_admin: admin,
                 apps,
+                avatar_path: None,
             },
         );
         token

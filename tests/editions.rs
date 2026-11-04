@@ -140,7 +140,7 @@ async fn un_joueur_s_inscrit_puis_change_d_avis() {
     assert_eq!(body["myRegistration"], true);
     assert_eq!(
         body["participants"],
-        json!([{ "playerId": app.player_id("Bob").await, "pseudo": "Bob" }])
+        json!([{ "playerId": app.player_id("Bob").await, "pseudo": "Bob", "avatarUrl": null }])
     );
 
     let (_, body) = app
