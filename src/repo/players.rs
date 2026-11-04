@@ -193,6 +193,119 @@ pub async fn list_visible(
     Ok(resolve_avatars(refs, auth_public_url))
 }
 
+/// Une fiche de l'écran admin « doublons » : de quoi reconnaître une ancienne
+/// adresse (non reliée au SSO) et les années où elle a joué.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct AdminPlayerRow {
+    pub id: i64,
+    pub pseudo: String,
+    pub email: String,
+    pub avatar_path: Option<String>,
+    pub linked: bool,
+    /// Années séparées par des virgules, croissantes.
+    pub years: Option<String>,
+}
+
+pub async fn list_all(pool: &SqlitePool) -> Result<Vec<AdminPlayerRow>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT p.id, p.pseudo, p.email, p.avatar_path, p.sso_user_id IS NOT NULL AS linked,
+                (SELECT group_concat(year, ',') FROM (
+                    SELECT DISTINCT e.year FROM editions e
+                    WHERE EXISTS (SELECT 1 FROM registrations r WHERE r.edition_id = e.id AND r.player_id = p.id)
+                       OR EXISTS (SELECT 1 FROM assignments a WHERE a.edition_id = e.id AND (a.giver_id = p.id OR a.receiver_id = p.id))
+                    ORDER BY e.year)) AS years
+         FROM players p ORDER BY lower(p.pseudo), p.id",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MergeOutcome {
+    Merged {
+        registrations: u64,
+        assignments: u64,
+        gifts: u64,
+    },
+    NotFound,
+    SamePlayer,
+    /// L'ancienne fiche est reliée à un compte SSO : la supprimer ferait
+    /// recréer un joueur vide à la prochaine connexion de ce compte.
+    SourceLinked,
+    /// Les deux fiches figurent dans ces éditions : on ne peut pas garder deux
+    /// inscriptions ni deux places de tirage pour une même personne.
+    Overlap(Vec<i64>),
+}
+
+/// Fusionne l'ancienne fiche `from` (adresse abandonnée, typiquement venue
+/// d'un import) dans `into` : inscriptions, tirages et cadeaux passent à
+/// `into`, puis `from` est supprimée. Tout ou rien.
+pub async fn merge(pool: &SqlitePool, from: i64, into: i64) -> Result<MergeOutcome, sqlx::Error> {
+    if from == into {
+        return Ok(MergeOutcome::SamePlayer);
+    }
+    // Verrou d'écriture dès l'ouverture : pas de tirage ni d'inscription qui
+    // se glisse entre la vérification et le déplacement.
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+
+    let linked: Vec<(i64, bool)> =
+        sqlx::query_as("SELECT id, sso_user_id IS NOT NULL FROM players WHERE id IN (?, ?)")
+            .bind(from)
+            .bind(into)
+            .fetch_all(&mut *tx)
+            .await?;
+    if linked.len() != 2 {
+        return Ok(MergeOutcome::NotFound);
+    }
+    if linked.iter().any(|&(id, l)| id == from && l) {
+        return Ok(MergeOutcome::SourceLinked);
+    }
+
+    let overlap: Vec<i64> = sqlx::query_scalar(
+        "SELECT e.year FROM editions e
+         WHERE (EXISTS (SELECT 1 FROM registrations r WHERE r.edition_id = e.id AND r.player_id = ?1)
+                OR EXISTS (SELECT 1 FROM assignments a WHERE a.edition_id = e.id AND ?1 IN (a.giver_id, a.receiver_id)))
+           AND (EXISTS (SELECT 1 FROM registrations r WHERE r.edition_id = e.id AND r.player_id = ?2)
+                OR EXISTS (SELECT 1 FROM assignments a WHERE a.edition_id = e.id AND ?2 IN (a.giver_id, a.receiver_id)))
+         ORDER BY e.year",
+    )
+    .bind(from)
+    .bind(into)
+    .fetch_all(&mut *tx)
+    .await?;
+    if !overlap.is_empty() {
+        return Ok(MergeOutcome::Overlap(overlap));
+    }
+
+    let moved = |sql: &'static str| sqlx::query(sql).bind(into).bind(from);
+    let registrations = moved("UPDATE registrations SET player_id = ? WHERE player_id = ?")
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    let givers = moved("UPDATE assignments SET giver_id = ? WHERE giver_id = ?")
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    let receivers = moved("UPDATE assignments SET receiver_id = ? WHERE receiver_id = ?")
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    let gifts = moved("UPDATE gifts SET player_id = ? WHERE player_id = ?")
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    sqlx::query("DELETE FROM players WHERE id = ?")
+        .bind(from)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(MergeOutcome::Merged {
+        registrations,
+        assignments: givers + receivers,
+        gifts,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

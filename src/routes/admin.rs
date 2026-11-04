@@ -10,7 +10,7 @@ use crate::{
     repo::{
         assignments::{self, MailRow, MailStatus},
         editions::{self, EditionStatus},
-        players,
+        players::{self, MergeOutcome},
     },
     services::{
         draw_service::{self, DrawOutcome},
@@ -300,4 +300,107 @@ pub async fn resend(
         StatusCode::ACCEPTED,
         Json(serde_json::json!({ "mailStatus": "pending" })),
     ))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminPlayer {
+    pub player_id: i64,
+    pub pseudo: String,
+    pub email: String,
+    pub avatar_url: Option<String>,
+    /// Relié à un compte SSO. Une fiche non reliée vient d'un import.
+    pub linked: bool,
+    pub years: Vec<i64>,
+}
+
+/// Toutes les fiches, pour repérer les doublons laissés par une adresse
+/// changée entre deux imports.
+pub async fn all_players(
+    State(state): State<AppState>,
+    admin: AdminUser,
+) -> ApiResult<Json<Vec<AdminPlayer>>> {
+    // Comme la page des participants : annuaire relu au mieux, pour que les
+    // nouvelles adresses figurent déjà dans la liste.
+    if let Err(e) = refresh_directory(&state, &admin).await {
+        tracing::warn!(error = ?e, "annuaire non relu, fiches servies depuis la base");
+    }
+    let rows = players::list_all(&state.pool).await?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|p| AdminPlayer {
+                player_id: p.id,
+                avatar_url: players::avatar_url(
+                    &state.config.auth_public_url,
+                    p.avatar_path.as_deref(),
+                ),
+                pseudo: p.pseudo,
+                email: p.email,
+                linked: p.linked,
+                years: p
+                    .years
+                    .unwrap_or_default()
+                    .split(',')
+                    .filter_map(|y| y.parse().ok())
+                    .collect(),
+            })
+            .collect(),
+    ))
+}
+
+#[derive(Deserialize)]
+pub struct MergeBody {
+    pub into: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeReport {
+    pub registrations: u64,
+    pub assignments: u64,
+    pub gifts: u64,
+}
+
+pub async fn merge_player(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+    ApiPath(from): ApiPath<i64>,
+    ApiJson(body): ApiJson<MergeBody>,
+) -> ApiResult<Json<MergeReport>> {
+    match players::merge(&state.pool, from, body.into).await? {
+        MergeOutcome::Merged {
+            registrations,
+            assignments,
+            gifts,
+        } => {
+            tracing::info!(from, into = body.into, "fiches fusionnées");
+            Ok(Json(MergeReport {
+                registrations,
+                assignments,
+                gifts,
+            }))
+        }
+        MergeOutcome::NotFound => Err(ApiError::not_found("Joueur inconnu.")),
+        MergeOutcome::SamePlayer => Err(ApiError::bad_request(
+            "MERGE_SAME_PLAYER",
+            "Choisis deux fiches différentes.",
+        )),
+        MergeOutcome::SourceLinked => Err(ApiError::conflict(
+            "MERGE_SOURCE_LINKED",
+            "La fiche à supprimer est reliée à un compte : elle se recréerait à sa prochaine connexion. Fusionne plutôt l'ancienne adresse dans celle-ci.",
+        )),
+        MergeOutcome::Overlap(years) => {
+            let years = years
+                .iter()
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            Err(ApiError::conflict(
+                "MERGE_OVERLAP",
+                format!(
+                    "Les deux fiches ont joué la même année ({years}) : impossible de les fusionner sans perdre un tirage."
+                ),
+            ))
+        }
+    }
 }

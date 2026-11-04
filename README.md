@@ -61,7 +61,9 @@ cargo clippy --all-targets -- -D warnings
    `ADMIN_EMAIL`, `SMTP_HOST`, `SMTP_FROM` (+ `SMTP_USER`/`SMTP_PASS`).
    Déployer ; vérifier `https://santa.limperiam.com/api/health` → `ok`.
 3. Déployer le Stack `secret_santa_frontend`.
-4. Dans l'admin du site : importer le `players.txt` de l'an dernier.
+4. Dans l'admin du site : importer le `players.txt` de l'an dernier. Si
+   quelqu'un a changé d'adresse depuis, l'import crée une seconde fiche :
+   « Fusionner des doublons » rattache l'ancienne fiche à la nouvelle.
 5. Créer l'édition de l'année (budget + deadline) : l'annonce part à tous.
 
 ## Fonctionnement
@@ -70,6 +72,11 @@ cargo clippy --all-targets -- -D warnings
   la deadline est passée. L'état est en base : si le conteneur était arrêté à
   la deadline, le tirage part au redémarrage. La transition vers `drawn` est
   conditionnelle : impossible de tirer deux fois.
+- **Fusion de doublons** (`POST /api/admin/players/{id}/merge`, `{ "into": … }`) :
+  inscriptions, tirages et cadeaux de l'ancienne fiche passent à la nouvelle,
+  puis l'ancienne est supprimée, en une transaction. Refusée si l'ancienne
+  fiche est reliée à un compte SSO (elle se recréerait à la connexion
+  suivante), ou si les deux fiches figurent dans une même édition.
 - **Relance** : 48 h avant la deadline, une fois, aux comptes sans réponse.
 - **Échec** (moins de 3 inscrits, contrainte de l'an dernier insoluble) :
   l'édition passe en `failed`, l'admin reçoit un mail ; repousser la deadline

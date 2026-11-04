@@ -43,6 +43,8 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/admin/import", post(import::import))
         .route("/admin/sso-users", get(admin::sso_users))
+        .route("/admin/players", get(admin::all_players))
+        .route("/admin/players/{id}/merge", post(admin::merge_player))
         .route("/admin/editions", post(admin::create_edition))
         .route("/admin/editions/current", patch(admin::patch_edition))
         .route(
